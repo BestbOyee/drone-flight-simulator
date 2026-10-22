@@ -7,7 +7,7 @@ import HUD from './components/HUD';
 export default function App() {
   const containerRef = useRef(null);
   const [selectedDrone, setSelectedDrone] = useState(DRONES[0]);
-  const [telemetry, setTelemetry] = useState({ altitude: '0.0', speed: '0.0', throttle: '0' });
+  const [telemetry, setTelemetry] = useState({ altitude: '0.0', speed: '0.0', throttle: '0', heading: 0, position: { x: 0, z: 0 }, rotationY: 0 });
   const [flightMode, setFlightMode] = useState('STABILIZE');
   
   // Camera Perspective State ('CHASE' or 'FPV')
@@ -16,7 +16,7 @@ export default function App() {
   cameraModeRef.current = cameraMode;
 
   useEffect(() => {
-    // 1. Scene, Camera, Renderer Setup (Sky Blue Background & Atmosphere)
+    // 1. Scene, Camera, Renderer Setup
     const scene = new THREE.Scene();
     scene.background = new THREE.Color('#87ceeb');
     scene.fog = new THREE.FogExp2('#87ceeb', 0.008);
@@ -40,7 +40,7 @@ export default function App() {
     dirLight.castShadow = true;
     scene.add(dirLight);
 
-    // 3. Park Environment (Lush Green Grass & Landing Pad)
+    // 3. Park Environment
     const groundGeo = new THREE.PlaneGeometry(400, 400);
     const groundMat = new THREE.MeshStandardMaterial({ 
       color: '#2e7d32', 
@@ -59,6 +59,19 @@ export default function App() {
     landingPad.rotation.x = -Math.PI / 2;
     landingPad.position.y = 0.02;
     scene.add(landingPad);
+
+    // --- FEATURE 1: Vertical Light Beacon on Landing Pad ---
+    const beaconGeo = new THREE.CylinderGeometry(0.2, 3.5, 120, 16, 1, true);
+    const beaconMat = new THREE.MeshBasicMaterial({ 
+      color: '#38bdf8', 
+      transparent: true, 
+      opacity: 0.35, 
+      side: THREE.DoubleSide,
+      blending: THREE.AdditiveBlending 
+    });
+    const beacon = new THREE.Mesh(beaconGeo, beaconMat);
+    beacon.position.set(0, 60, 0);
+    scene.add(beacon);
 
     // 4. Procedural Low-Poly Trees Scatter
     const treeTrunkGeo = new THREE.CylinderGeometry(0.4, 0.6, 3, 6);
@@ -102,10 +115,10 @@ export default function App() {
       scene.add(ring);
     });
 
-    // 5. Initialize Physics with Selected Drone Profile
+    // 5. Initialize Physics
     const physics = new DronePhysics(selectedDrone);
     
-    // 6. Dynamic 3D Drone Mesh Construction (Perfected Rectangular & Multi-Rotor Layouts)
+    // 6. Dynamic 3D Drone Mesh Construction
     const droneGroup = new THREE.Group();
     const bodyMat = new THREE.MeshStandardMaterial({ color: selectedDrone.color, metalness: 0.85, roughness: 0.2 });
     
@@ -174,7 +187,7 @@ export default function App() {
 
     scene.add(droneGroup);
 
-    // 7. Keyboard Event Listeners (Including 'C' key for Camera FPV Toggle)
+    // 7. Key Listeners
     const keys = {};
     const handleKeyDown = (e) => { 
       keys[e.code] = true; 
@@ -199,13 +212,13 @@ export default function App() {
       droneGroup.position.copy(physics.position);
       droneGroup.rotation.copy(physics.rotation);
 
-      // Stop propellers completely at 0 throttle, spin dynamically otherwise
+      // Stop propellers completely at 0 throttle
       const spinSpeed = physics.throttle === 0 ? 0 : 20 + physics.throttle * 60;
       rotors.forEach((rotor, i) => {
         rotor.rotation.y += spinSpeed * delta * (i % 2 === 0 ? 1 : -1);
       });
 
-      // Camera Positioning (Chase vs FPV Cockpit)
+      // Camera Positioning
       if (cameraModeRef.current === 'CHASE') {
         const targetCameraOffset = new THREE.Vector3(0, 4.5, -9).applyEuler(new THREE.Euler(0, physics.rotation.y, 0));
         camera.position.lerp(physics.position.clone().add(targetCameraOffset), delta * 5);
@@ -220,11 +233,20 @@ export default function App() {
         camera.lookAt(physics.position.clone().add(lookAhead));
       }
 
-      setTelemetry({
-        altitude: physics.position.y.toFixed(1),
-        speed: physics.velocity.length().toFixed(1),
-        throttle: Math.round(physics.throttle * 100),
-      });
+      // Heading angle calculation in degrees (0 = North)
+     // Corrected heading calculation (0 = North, increasing clockwise)
+     // Convert Three.js Yaw angle into true 360° Compass Bearing (0 = North, 90 = East, 180 = South, 270 = West)
+     let headingDeg = Math.round((-physics.rotation.y * (180 / Math.PI)) % 360);
+     if (headingDeg < 0) headingDeg += 360;
+
+     setTelemetry({
+       altitude: physics.position.y.toFixed(1),
+       speed: physics.velocity.length().toFixed(1),
+       throttle: Math.round(physics.throttle * 100),
+       heading: headingDeg,
+       position: { x: physics.position.x, z: physics.position.z },
+       rotationY: physics.rotation.y
+     });
 
       renderer.render(scene, camera);
     };
