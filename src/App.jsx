@@ -9,6 +9,11 @@ export default function App() {
   const [selectedDrone, setSelectedDrone] = useState(DRONES[0]);
   const [telemetry, setTelemetry] = useState({ altitude: '0.0', speed: '0.0', throttle: '0' });
   const [flightMode, setFlightMode] = useState('STABILIZE');
+  
+  // Camera Perspective State ('CHASE' or 'FPV')
+  const [cameraMode, setCameraMode] = useState('CHASE');
+  const cameraModeRef = useRef('CHASE');
+  cameraModeRef.current = cameraMode;
 
   useEffect(() => {
     // 1. Scene, Camera, Renderer Setup (Sky Blue Background & Atmosphere)
@@ -100,39 +105,83 @@ export default function App() {
     // 5. Initialize Physics with Selected Drone Profile
     const physics = new DronePhysics(selectedDrone);
     
-    // 6. Dynamic 3D Drone Mesh Construction (Quad, Hex, or Octo)
+    // 6. Dynamic 3D Drone Mesh Construction (Perfected Rectangular & Multi-Rotor Layouts)
     const droneGroup = new THREE.Group();
     const bodyMat = new THREE.MeshStandardMaterial({ color: selectedDrone.color, metalness: 0.85, roughness: 0.2 });
     
-    const hubSize = selectedDrone.rotorCount > 6 ? 1.5 : 1.2;
-    const hub = new THREE.Mesh(new THREE.BoxGeometry(hubSize, 0.35, hubSize), bodyMat);
+    const hubWidth = selectedDrone.rotorCount > 6 ? 2.0 : (selectedDrone.rotorCount > 4 ? 1.6 : 1.8);
+    const hub = new THREE.Mesh(new THREE.BoxGeometry(hubWidth, 0.35, 1.0), bodyMat);
     hub.castShadow = true;
     droneGroup.add(hub);
 
-    const armGeo = new THREE.CylinderGeometry(0.07, 0.07, 3.2, 8);
     const bladeMat = new THREE.MeshStandardMaterial({ color: '#cbd5e1', metalness: 0.5 });
     const rotors = [];
 
     const rotorCount = selectedDrone.rotorCount || 4;
-    for (let i = 0; i < rotorCount; i++) {
-      const angle = (i * 2 * Math.PI) / rotorCount;
-      
+    const motorOffsets = [];
+
+    if (rotorCount === 4) {
+      motorOffsets.push(
+        { x: -1.6, z: -1.0 },
+        { x:  1.6, z: -1.0 },
+        { x:  1.6, z:  1.0 },
+        { x: -1.6, z:  1.0 }
+      );
+    } else if (rotorCount === 6) {
+      motorOffsets.push(
+        { x: -1.7, z: -1.0 },
+        { x:  1.7, z: -1.0 },
+        { x:  2.1, z:  0.0 },
+        { x:  1.7, z:  1.0 },
+        { x: -1.7, z:  1.0 },
+        { x: -2.1, z:  0.0 }
+      );
+    } else if (rotorCount === 8) {
+      motorOffsets.push(
+        { x: -1.8, z: -1.0 },
+        { x: -0.8, z: -1.2 },
+        { x:  0.8, z: -1.2 },
+        { x:  1.8, z: -1.0 },
+        { x:  2.2, z:  0.0 },
+        { x:  1.8, z:  1.0 },
+        { x: -1.8, z:  1.0 },
+        { x: -2.2, z:  0.0 }
+      );
+    }
+
+    motorOffsets.forEach((pos) => {
+      const dist = Math.hypot(pos.x, pos.z);
+      const angle = Math.atan2(pos.x, pos.z);
+
+      const armGeo = new THREE.CylinderGeometry(0.06, 0.06, dist, 8);
       const arm = new THREE.Mesh(armGeo, bodyMat);
-      arm.rotation.z = Math.PI / 2;
-      arm.position.set(Math.cos(angle) * 1.3, 0, Math.sin(angle) * 1.3);
+      
+      arm.position.set(pos.x / 2, 0, pos.z / 2);
+      arm.rotation.x = Math.PI / 2;
+      arm.rotation.z = -angle;
       droneGroup.add(arm);
 
-      const rotor = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.04, 0.22), bladeMat);
-      rotor.position.set(Math.cos(angle) * 2.4, 0.2, Math.sin(angle) * 2.4);
+      const motorMountGeo = new THREE.CylinderGeometry(0.22, 0.22, 0.15, 12);
+      const motorMount = new THREE.Mesh(motorMountGeo, bodyMat);
+      motorMount.position.set(pos.x, 0.05, pos.z);
+      droneGroup.add(motorMount);
+
+      const rotor = new THREE.Mesh(new THREE.BoxGeometry(rotorCount > 6 ? 1.2 : 1.6, 0.04, 0.22), bladeMat);
+      rotor.position.set(pos.x, 0.18, pos.z);
       droneGroup.add(rotor);
       rotors.push(rotor);
-    }
+    });
 
     scene.add(droneGroup);
 
-    // 7. Keyboard Event Listeners
+    // 7. Keyboard Event Listeners (Including 'C' key for Camera FPV Toggle)
     const keys = {};
-    const handleKeyDown = (e) => { keys[e.code] = true; };
+    const handleKeyDown = (e) => { 
+      keys[e.code] = true; 
+      if (e.code === 'KeyC') {
+        setCameraMode((prev) => (prev === 'CHASE' ? 'FPV' : 'CHASE'));
+      }
+    };
     const handleKeyUp = (e) => { keys[e.code] = false; };
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
@@ -145,31 +194,36 @@ export default function App() {
       animationFrameId = requestAnimationFrame(animate);
       const delta = Math.min(clock.getDelta(), 0.1);
 
-      physics.controls.throttle = (keys['KeyW'] ? 1 : 0) - (keys['KeyS'] ? 0.6 : 0);
-      physics.controls.roll = (keys['ArrowRight'] ? 1 : 0) - (keys['ArrowLeft'] ? 1 : 0);
-      physics.controls.pitch = (keys['ArrowUp'] ? 1 : 0) - (keys['ArrowDown'] ? 1 : 0);
-      physics.controls.yaw = (keys['KeyD'] ? 1 : 0) - (keys['KeyA'] ? 1 : 0);
-
-      physics.update(delta);
+      physics.update(delta, keys);
 
       droneGroup.position.copy(physics.position);
       droneGroup.rotation.copy(physics.rotation);
 
-      const spinSpeed = 25 + (physics.controls.throttle + 1) * 35;
+      // Stop propellers completely at 0 throttle, spin dynamically otherwise
+      const spinSpeed = physics.throttle === 0 ? 0 : 20 + physics.throttle * 60;
       rotors.forEach((rotor, i) => {
         rotor.rotation.y += spinSpeed * delta * (i % 2 === 0 ? 1 : -1);
       });
 
-      const targetCameraOffset = new THREE.Vector3(0, 4.5, -9).applyEuler(new THREE.Euler(0, physics.rotation.y, 0));
-      camera.position.lerp(physics.position.clone().add(targetCameraOffset), delta * 5);
-      
-      const lookTarget = physics.position.clone().add(new THREE.Vector3(0, 0.8, 0));
-      camera.lookAt(lookTarget);
+      // Camera Positioning (Chase vs FPV Cockpit)
+      if (cameraModeRef.current === 'CHASE') {
+        const targetCameraOffset = new THREE.Vector3(0, 4.5, -9).applyEuler(new THREE.Euler(0, physics.rotation.y, 0));
+        camera.position.lerp(physics.position.clone().add(targetCameraOffset), delta * 5);
+        
+        const lookTarget = physics.position.clone().add(new THREE.Vector3(0, 0.8, 0));
+        camera.lookAt(lookTarget);
+      } else {
+        const fpvOffset = new THREE.Vector3(0, 0.4, 0.4).applyEuler(physics.rotation);
+        camera.position.copy(physics.position).add(fpvOffset);
+
+        const lookAhead = new THREE.Vector3(0, 0.4, 10).applyEuler(physics.rotation);
+        camera.lookAt(physics.position.clone().add(lookAhead));
+      }
 
       setTelemetry({
         altitude: physics.position.y.toFixed(1),
         speed: physics.velocity.length().toFixed(1),
-        throttle: Math.round(((physics.controls.throttle + 1) * 50)),
+        throttle: Math.round(physics.throttle * 100),
       });
 
       renderer.render(scene, camera);
