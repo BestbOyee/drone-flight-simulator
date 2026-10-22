@@ -2,11 +2,7 @@ import * as THREE from 'three';
 
 export class DronePhysics {
   constructor(droneProfile) {
-    this.profile = droneProfile;
-    this.mass = droneProfile.mass;
-    this.maxThrust = droneProfile.maxThrust;
-    this.dragCoeff = droneProfile.dragCoeff;
-    this.agility = droneProfile.agility;
+    this.setDroneProfile(droneProfile);
 
     this.position = new THREE.Vector3(0, 2, 0);
     this.velocity = new THREE.Vector3(0, 0, 0);
@@ -19,6 +15,14 @@ export class DronePhysics {
       roll: 0,
       yaw: 0
     };
+  }
+
+  setDroneProfile(profile) {
+    this.profile = profile;
+    this.mass = profile.mass;
+    this.maxThrust = profile.maxThrust;
+    this.dragCoeff = profile.dragCoeff;
+    this.agility = profile.agility;
   }
 
   update(delta) {
@@ -45,8 +49,8 @@ export class DronePhysics {
       this.velocity.set(0, 0, 0);
     }
 
-    this.rotation.x = THREE.MathUtils.lerp(this.rotation.x, this.controls.pitch * 0.5 * this.agility, delta * 5);
-    this.rotation.z = THREE.MathUtils.lerp(this.rotation.z, -this.controls.roll * 0.5 * this.agility, delta * 5);
+    this.rotation.x = THREE.MathUtils.lerp(this.rotation.x, this.controls.pitch * 0.5 * this.agility, delta * 6);
+    this.rotation.z = THREE.MathUtils.lerp(this.rotation.z, -this.controls.roll * 0.5 * this.agility, delta * 6);
     this.rotation.y -= this.controls.yaw * 1.5 * delta * this.agility;
   }
 }
