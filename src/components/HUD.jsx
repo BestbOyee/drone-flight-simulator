@@ -1,9 +1,22 @@
 import React, { useState } from 'react';
 import { DRONES } from '../config/dronesConfig';
 import { MAPS } from '../config/mapsConfig';
-import { Activity, Compass, BatteryCharging, Gauge, Zap, Camera, Navigation, MapPin } from 'lucide-react';
+import { Activity, Compass, BatteryCharging, Gauge, Zap, Camera, Navigation, MapPin, Volume2, VolumeX } from 'lucide-react';
 
-export default function HUD({ telemetry, selectedDrone, onSelectDrone, selectedMap, onSelectMap, flightMode, setFlightMode }) {
+export default function HUD({
+  telemetry,
+  selectedDrone,
+  onSelectDrone,
+  selectedMap,
+  onSelectMap,
+  flightMode,
+  setFlightMode,
+  audioEnabled,
+  volume,
+  muted,
+  onVolumeChange,
+  onToggleMute
+}) {
   const [isPhotoMode, setIsPhotoMode] = useState(false);
   const [activeTab, setActiveTab] = useState('DRONES'); // 'DRONES' or 'MAPS'
 
@@ -172,6 +185,34 @@ export default function HUD({ telemetry, selectedDrone, onSelectDrone, selectedM
                 <span className="text-gray-400 text-xs flex items-center gap-1.5"><BatteryCharging className="w-3.5 h-3.5 text-emerald-400"/> THROTTLE</span>
                 <span className="text-emerald-300 font-bold">{telemetry.throttle} <span className="text-xs text-gray-500">%</span></span>
               </div>
+            </div>
+
+            {/* Audio Controls */}
+            <div className="mt-2.5 pt-2.5 border-t border-gray-800">
+              {!audioEnabled ? (
+                <div className="flex items-center gap-2 bg-gray-950/50 px-3 py-2 rounded-lg border border-gray-800/60 text-[10px] text-gray-400 font-mono uppercase tracking-wider">
+                  <VolumeX className="w-3.5 h-3.5 text-gray-500" />
+                  <span>Press any key to enable audio</span>
+                </div>
+              ) : (
+                <div className="flex items-center gap-3 bg-gray-950/50 px-3 py-1.5 rounded-lg border border-gray-800/60">
+                  <button
+                    onClick={onToggleMute}
+                    className="text-cyan-400 hover:text-cyan-300 transition-colors flex-shrink-0"
+                  >
+                    {muted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
+                  </button>
+                  <input
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.01"
+                    value={volume}
+                    onChange={(e) => onVolumeChange(parseFloat(e.target.value))}
+                    className="w-full accent-cyan-400 h-1"
+                  />
+                </div>
+              )}
             </div>
           </div>
 

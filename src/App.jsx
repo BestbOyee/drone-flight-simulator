@@ -1,10 +1,11 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import * as THREE from 'three';
 import { DRONES } from './config/dronesConfig';
 import { MAPS } from './config/mapsConfig';
 import { DronePhysics } from './physics/DronePhysics';
 import { ProbeManager } from './physics/ProbeManager';
 import { generatePBRTexture } from './utils/pbrTextures';
+import EngineSound from './audio/EngineSound';
 import HUD from './components/HUD';
 
 export default function App() {
@@ -13,11 +14,67 @@ export default function App() {
   const [selectedMap, setSelectedMap] = useState(MAPS[0]);
   const [telemetry, setTelemetry] = useState({ altitude: '0.0', speed: '0.0', throttle: '0', heading: 0, position: { x: 0, z: 0 }, rotationY: 0 });
   const [flightMode, setFlightMode] = useState('STABILIZE');
-  
+
   const [cameraMode, setCameraMode] = useState('CHASE');
   const cameraModeRef = useRef('CHASE');
   cameraModeRef.current = cameraMode;
 
+  // ------------------------------------------------------------
+  // Audio state
+  // ------------------------------------------------------------
+  const engineSoundRef = useRef(null);
+  const [audioEnabled, setAudioEnabled] = useState(false);
+  const [volume, setVolume] = useState(0.7);
+  const [muted, setMuted] = useState(false);
+
+  const initAudio = useCallback(async () => {
+    if (engineSoundRef.current) {
+      await engineSoundRef.current.resume();
+      return;
+    }
+    const engine = new EngineSound({ rotorCount: selectedDrone.rotorCount || 4 });
+    await engine.init();
+    engine.setMasterVolume(volume);
+    engineSoundRef.current = engine;
+    setAudioEnabled(true);
+  }, [selectedDrone, volume]);
+
+  // Unlock audio on first user gesture (required by browser autoplay policies)
+  useEffect(() => {
+    const unlock = () => {
+      initAudio();
+      window.removeEventListener('keydown', unlock);
+      window.removeEventListener('click', unlock);
+    };
+    window.addEventListener('keydown', unlock);
+    window.addEventListener('click', unlock);
+    return () => {
+      window.removeEventListener('keydown', unlock);
+      window.removeEventListener('click', unlock);
+    };
+  }, [initAudio]);
+
+  // Cleanup audio engine on unmount
+  useEffect(() => {
+    return () => {
+      engineSoundRef.current?.dispose();
+      engineSoundRef.current = null;
+    };
+  }, []);
+
+  const handleVolumeChange = (v) => {
+    setVolume(v);
+    engineSoundRef.current?.setMasterVolume(v);
+  };
+
+  const handleToggleMute = () => {
+    const next = engineSoundRef.current?.toggleMuted();
+    setMuted(!!next);
+  };
+
+  // ------------------------------------------------------------
+  // Main Three.js scene setup / render loop
+  // ------------------------------------------------------------
   useEffect(() => {
     // 1. Scene, Camera, Renderer Setup with Film Tone Mapping & Shadows
     const scene = new THREE.Scene();
@@ -31,7 +88,7 @@ export default function App() {
     renderer.shadowMap.type = THREE.PCFSoftShadowMap; // Soft realistic shadows
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.25;
-    
+
     if (containerRef.current) {
       containerRef.current.appendChild(renderer.domElement);
     }
@@ -53,8 +110,8 @@ export default function App() {
     const groundGeo = new THREE.PlaneGeometry(400, 400, 128, 128);
     const { albedoMap, normalMap } = generatePBRTexture(selectedMap.id);
 
-    const groundMat = new THREE.MeshStandardMaterial({ 
-      color: selectedMap.groundColor, 
+    const groundMat = new THREE.MeshStandardMaterial({
+      color: selectedMap.groundColor,
       map: albedoMap,
       normalMap: normalMap,
       normalScale: new THREE.Vector2(0.8, 0.8),
@@ -76,12 +133,12 @@ export default function App() {
     scene.add(landingPad);
 
     const beaconGeo = new THREE.CylinderGeometry(0.2, 3.5, 120, 16, 1, true);
-    const beaconMat = new THREE.MeshBasicMaterial({ 
-      color: '#38bdf8', 
-      transparent: true, 
-      opacity: 0.35, 
+    const beaconMat = new THREE.MeshBasicMaterial({
+      color: '#38bdf8',
+      transparent: true,
+      opacity: 0.35,
       side: THREE.DoubleSide,
-      blending: THREE.AdditiveBlending 
+      blending: THREE.AdditiveBlending
     });
     const beacon = new THREE.Mesh(beaconGeo, beaconMat);
     beacon.position.set(0, 60, 0);
@@ -145,7 +202,7 @@ export default function App() {
       }
 
       particleGeo.setAttribute('position', new THREE.BufferAttribute(particlePositions, 3));
-      
+
       const particleMat = new THREE.PointsMaterial({
         color: '#ffffff',
         size: 0.7,
@@ -161,7 +218,7 @@ export default function App() {
     // Glowing Obstacle Rings
     const ringGeo = new THREE.TorusGeometry(4, 0.25, 16, 100);
     const ringMat = new THREE.MeshStandardMaterial({ color: '#38bdf8', emissive: '#0284c7', emissiveIntensity: 0.8 });
-    
+
     [
       { x: 0, y: 8, z: -35 },
       { x: 25, y: 12, z: -70 },
@@ -174,12 +231,16 @@ export default function App() {
 
     // 6. Physics & Probe Ejector System Initialization
     const physics = new DronePhysics(selectedDrone);
-    const probeManager = new ProbeManager(scene);
-    
+    const probeManager = new ProbeManager(scene, {
+      onImpact: (impactSpeed) => {
+        engineSoundRef.current?.playImpact(impactSpeed);
+      }
+    });
+
     // 7. Dynamic Drone Mesh Construction
     const droneGroup = new THREE.Group();
     const bodyMat = new THREE.MeshStandardMaterial({ color: selectedDrone.color, metalness: 0.85, roughness: 0.2 });
-    
+
     const hubWidth = selectedDrone.rotorCount > 6 ? 2.0 : (selectedDrone.rotorCount > 4 ? 1.6 : 1.8);
     const hub = new THREE.Mesh(new THREE.BoxGeometry(hubWidth, 0.35, 1.0), bodyMat);
     hub.castShadow = true;
@@ -224,8 +285,8 @@ export default function App() {
 
     // 8. Key Listeners (Camera Toggle & Spacebar Probe Launch)
     const keys = {};
-    const handleKeyDown = (e) => { 
-      keys[e.code] = true; 
+    const handleKeyDown = (e) => {
+      keys[e.code] = true;
       if (e.code === 'KeyC') {
         setCameraMode((prev) => (prev === 'CHASE' ? 'FPV' : 'CHASE'));
       }
@@ -258,6 +319,11 @@ export default function App() {
       rotors.forEach((rotor, i) => {
         rotor.rotation.y += spinSpeed * delta * (i % 2 === 0 ? 1 : -1);
       });
+
+      // Engine audio update (rotor hum + wind noise tied to throttle/speed)
+      if (engineSoundRef.current?.ready) {
+        engineSoundRef.current.update(physics.throttle, physics.velocity.length());
+      }
 
       // Animate snowfall (only active in Verdant Park)
       if (particles && particleGeo) {
@@ -326,6 +392,11 @@ export default function App() {
         onSelectMap={setSelectedMap}
         flightMode={flightMode}
         setFlightMode={setFlightMode}
+        audioEnabled={audioEnabled}
+        volume={volume}
+        muted={muted}
+        onVolumeChange={handleVolumeChange}
+        onToggleMute={handleToggleMute}
       />
     </div>
   );

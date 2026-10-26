@@ -1,9 +1,10 @@
 import * as THREE from 'three';
 
 export class ProbeManager {
-  constructor(scene) {
+  constructor(scene, options = {}) {
     this.scene = scene;
     this.probes = [];
+    this.onImpact = options.onImpact || null; // (impactSpeed: number) => void
 
     // Probe physical geometry and material
     this.probeGeo = new THREE.SphereGeometry(0.3, 16, 16);
@@ -46,7 +47,8 @@ export class ProbeManager {
       position: dronePosition.clone(),
       velocity: initialVelocity,
       mass: 0.5, // 500g sensor sphere
-      isGrounded: false
+      isGrounded: false,
+      hasImpacted: false // ensures onImpact fires only once per probe
     });
   }
 
@@ -78,6 +80,13 @@ export class ProbeManager {
         // 5. Ground Collision Detection & Response
         if (p.position.y <= this.radius) {
           p.position.y = this.radius;
+
+          // Fire impact sound once, using the velocity at moment of contact
+          if (!p.hasImpacted) {
+            const impactSpeed = p.velocity.length();
+            this.onImpact?.(impactSpeed);
+            p.hasImpacted = true;
+          }
 
           // Bounce vertical velocity component
           if (Math.abs(p.velocity.y) > 0.5) {
