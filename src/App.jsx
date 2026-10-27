@@ -4,6 +4,7 @@ import { DRONES } from './config/dronesConfig';
 import { MAPS } from './config/mapsConfig';
 import { DronePhysics } from './physics/DronePhysics';
 import { ProbeManager } from './physics/ProbeManager';
+import { CombatManager } from './physics/CombatManager';
 import { generatePBRTexture } from './utils/pbrTextures';
 import EngineSound from './audio/EngineSound';
 import HUD from './components/HUD';
@@ -15,13 +16,24 @@ export default function App() {
   const [telemetry, setTelemetry] = useState({ altitude: '0.0', speed: '0.0', throttle: '0', heading: 0, position: { x: 0, z: 0 }, rotationY: 0 });
   const [flightMode, setFlightMode] = useState('STABILIZE');
 
+  // Combat State for HUD
+  const [combatState, setCombatState] = useState({
+    health: 100,
+    maxHealth: 100,
+    kills: 0,
+    score: 0,
+    isDead: false,
+    respawnCountdown: 0,
+    hitMarker: false,
+    playerDamageFlash: false,
+    radarEnemies: []
+  });
+
   const [cameraMode, setCameraMode] = useState('CHASE');
   const cameraModeRef = useRef('CHASE');
   cameraModeRef.current = cameraMode;
 
-  // ------------------------------------------------------------
-  // Audio state
-  // ------------------------------------------------------------
+  // Audio State
   const engineSoundRef = useRef(null);
   const [audioEnabled, setAudioEnabled] = useState(false);
   const [volume, setVolume] = useState(0.7);
@@ -39,7 +51,6 @@ export default function App() {
     setAudioEnabled(true);
   }, [selectedDrone, volume]);
 
-  // Unlock audio on first user gesture (required by browser autoplay policies)
   useEffect(() => {
     const unlock = () => {
       initAudio();
@@ -54,7 +65,6 @@ export default function App() {
     };
   }, [initAudio]);
 
-  // Cleanup audio engine on unmount
   useEffect(() => {
     return () => {
       engineSoundRef.current?.dispose();
@@ -72,9 +82,6 @@ export default function App() {
     setMuted(!!next);
   };
 
-  // ------------------------------------------------------------
-  // Main Three.js scene setup / render loop
-  // ------------------------------------------------------------
   useEffect(() => {
     // 1. Scene, Camera, Renderer Setup with Film Tone Mapping & Shadows
     const scene = new THREE.Scene();
@@ -85,7 +92,7 @@ export default function App() {
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap; // Soft realistic shadows
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.25;
 
@@ -215,27 +222,14 @@ export default function App() {
       scene.add(particles);
     }
 
-    // Glowing Obstacle Rings
-    const ringGeo = new THREE.TorusGeometry(4, 0.25, 16, 100);
-    const ringMat = new THREE.MeshStandardMaterial({ color: '#38bdf8', emissive: '#0284c7', emissiveIntensity: 0.8 });
-
-    [
-      { x: 0, y: 8, z: -35 },
-      { x: 25, y: 12, z: -70 },
-      { x: -25, y: 15, z: -105 },
-    ].forEach(pos => {
-      const ring = new THREE.Mesh(ringGeo, ringMat);
-      ring.position.set(pos.x, pos.y, pos.z);
-      scene.add(ring);
-    });
-
-    // 6. Physics & Probe Ejector System Initialization
+    // 6. Physics, Probe & Combat Manager Systems
     const physics = new DronePhysics(selectedDrone);
     const probeManager = new ProbeManager(scene, {
       onImpact: (impactSpeed) => {
         engineSoundRef.current?.playImpact(impactSpeed);
       }
     });
+    const combatManager = new CombatManager(scene, engineSoundRef.current);
 
     // 7. Dynamic Drone Mesh Construction
     const droneGroup = new THREE.Group();
@@ -283,7 +277,7 @@ export default function App() {
 
     scene.add(droneGroup);
 
-    // 8. Key Listeners (Camera Toggle & Spacebar Probe Launch)
+    // 8. Key & Mouse Listeners (Camera Toggle, Probe Launch, Laser Fire)
     const keys = {};
     const handleKeyDown = (e) => {
       keys[e.code] = true;
@@ -291,13 +285,24 @@ export default function App() {
         setCameraMode((prev) => (prev === 'CHASE' ? 'FPV' : 'CHASE'));
       }
       if (e.code === 'Space') {
-        // Launch sensor probe with current drone position, vector momentum, and heading
+        // Primary Fire: Laser Cannon
+        combatManager.firePlayerLaser(physics.position, physics.rotation, physics.velocity);
+      }
+      if (e.code === 'KeyE') {
+        // Eject sensor probe with current drone position, vector momentum, and heading
         probeManager.ejectProbe(physics.position, physics.velocity, physics.rotation, 18);
       }
     };
     const handleKeyUp = (e) => { keys[e.code] = false; };
+    const handleMouseDown = (e) => {
+      if (e.button === 0) {
+        combatManager.firePlayerLaser(physics.position, physics.rotation, physics.velocity);
+      }
+    };
+
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
+    window.addEventListener('mousedown', handleMouseDown);
 
     // 9. Animation & Physics Loop
     let animationFrameId;
@@ -307,10 +312,17 @@ export default function App() {
       animationFrameId = requestAnimationFrame(animate);
       const delta = Math.min(clock.getDelta(), 0.1);
 
-      // Physics Integration
-      physics.update(delta, keys);
-      probeManager.update(delta);
+      // Keep combat manager's sound engine reference in sync with the audio lifecycle
+      combatManager.soundEngine = engineSoundRef.current;
 
+      // Physics Integration
+      if (!combatManager.isPlayerDead) {
+        physics.update(delta, keys);
+      }
+      probeManager.update(delta);
+      const combatEvents = combatManager.update(delta, physics);
+
+      droneGroup.visible = !combatManager.isPlayerDead;
       droneGroup.position.copy(physics.position);
       droneGroup.rotation.copy(physics.rotation);
 
@@ -322,7 +334,9 @@ export default function App() {
 
       // Engine audio update (rotor hum + wind noise tied to throttle/speed)
       if (engineSoundRef.current?.ready) {
-        engineSoundRef.current.update(physics.throttle, physics.velocity.length());
+        const droneSpeed = combatManager.isPlayerDead ? 0 : physics.velocity.length();
+        const droneThrottle = combatManager.isPlayerDead ? 0 : physics.throttle;
+        engineSoundRef.current.update(droneThrottle, droneSpeed);
       }
 
       // Animate snowfall (only active in Verdant Park)
@@ -335,6 +349,9 @@ export default function App() {
         particleGeo.attributes.position.needsUpdate = true;
       }
 
+            // Dynamic Camera Positioning (Chase vs FPV) — crosshair now matches actual fire direction
+      const noseForward = new THREE.Vector3(0, 0, 1).applyEuler(physics.rotation);
+
       // Dynamic Camera Positioning (Chase vs FPV)
       if (cameraModeRef.current === 'CHASE') {
         const targetCameraOffset = new THREE.Vector3(0, 4.5, -9).applyEuler(new THREE.Euler(0, physics.rotation.y, 0));
@@ -345,7 +362,6 @@ export default function App() {
         camera.position.copy(physics.position).add(fpvOffset);
         camera.lookAt(physics.position.clone().add(new THREE.Vector3(0, 0.4, 10).applyEuler(physics.rotation)));
       }
-
       let headingDeg = Math.round((-physics.rotation.y * (180 / Math.PI)) % 360);
       if (headingDeg < 0) headingDeg += 360;
 
@@ -356,6 +372,18 @@ export default function App() {
         heading: headingDeg,
         position: { x: physics.position.x, z: physics.position.z },
         rotationY: physics.rotation.y
+      });
+
+      setCombatState({
+        health: combatManager.playerHealth,
+        maxHealth: combatManager.playerMaxHealth,
+        kills: combatManager.kills,
+        score: combatManager.score,
+        isDead: combatManager.isPlayerDead,
+        respawnCountdown: combatEvents.respawnCountdown,
+        hitMarker: combatEvents.hitRegistered,
+        playerDamageFlash: combatEvents.playerHitRegistered,
+        radarEnemies: combatManager.getRadarEnemies()
       });
 
       renderer.render(scene, camera);
@@ -373,8 +401,10 @@ export default function App() {
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
+      window.removeEventListener('mousedown', handleMouseDown);
       window.removeEventListener('resize', handleResize);
       cancelAnimationFrame(animationFrameId);
+      combatManager.dispose();
       if (containerRef.current) {
         containerRef.current.innerHTML = '';
       }
@@ -386,6 +416,7 @@ export default function App() {
       <div ref={containerRef} className="absolute inset-0" />
       <HUD
         telemetry={telemetry}
+        combatState={combatState}
         selectedDrone={selectedDrone}
         onSelectDrone={setSelectedDrone}
         selectedMap={selectedMap}

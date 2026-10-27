@@ -1,9 +1,11 @@
 /**
  * EngineSound
  * ------------------------------------------------------------
- * Procedural Web Audio engine for drone rotor hum + wind noise +
- * physics impact thumps. No external audio files required —
- * everything is synthesized at runtime.
+ * Procedural Web Audio engine for:
+ * - Drone rotor hum & wind noise
+ * - Laser fire synthesis (Player & Enemy)
+ * - Hit impact deflection SFX
+ * - Drone explosion detonations
  */
 
 export default class EngineSound {
@@ -127,9 +129,107 @@ export default class EngineSound {
       this.windFilter.frequency.setTargetAtTime(400 + speedNorm * 3000, now, smoothing);
     }
   
+    // ------------------------------------------------------------
+    // Laser Fire Sound (Synthesized pitch drop)
+    // ------------------------------------------------------------
+    playLaserFire(isEnemy = false) {
+      if (!this.ready) return;
+      const ctx = this.ctx;
+      const now = ctx.currentTime;
+  
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+  
+      osc.type = isEnemy ? 'sawtooth' : 'sine';
+      const startFreq = isEnemy ? 600 : 950;
+      const endFreq = isEnemy ? 120 : 180;
+      const duration = isEnemy ? 0.14 : 0.11;
+  
+      osc.frequency.setValueAtTime(startFreq, now);
+      osc.frequency.exponentialRampToValueAtTime(endFreq, now + duration);
+  
+      gain.gain.setValueAtTime(isEnemy ? 0.2 : 0.35, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
+  
+      osc.connect(gain);
+      gain.connect(this.masterGain);
+  
+      osc.start(now);
+      osc.stop(now + duration + 0.02);
+    }
+  
+    // ------------------------------------------------------------
+    // Laser Hit / Armor Deflection Sound
+    // ------------------------------------------------------------
+    playHitSound() {
+      if (!this.ready) return;
+      const ctx = this.ctx;
+      const now = ctx.currentTime;
+  
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+  
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(1400, now);
+      osc.frequency.exponentialRampToValueAtTime(300, now + 0.08);
+  
+      gain.gain.setValueAtTime(0.3, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
+  
+      osc.connect(gain);
+      gain.connect(this.masterGain);
+  
+      osc.start(now);
+      osc.stop(now + 0.09);
+    }
+  
+    // ------------------------------------------------------------
+    // Drone Explosion Sound
+    // ------------------------------------------------------------
+    playExplosion() {
+      if (!this.ready) return;
+      const ctx = this.ctx;
+      const now = ctx.currentTime;
+  
+      // 1. Noise crackle
+      const noiseBuffer = this._createNoiseBuffer(0.8);
+      const noiseSrc = ctx.createBufferSource();
+      noiseSrc.buffer = noiseBuffer;
+  
+      const noiseFilter = ctx.createBiquadFilter();
+      noiseFilter.type = 'lowpass';
+      noiseFilter.frequency.setValueAtTime(1200, now);
+      noiseFilter.frequency.exponentialRampToValueAtTime(100, now + 0.7);
+  
+      const noiseGain = ctx.createGain();
+      noiseGain.gain.setValueAtTime(0.7, now);
+      noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.75);
+  
+      noiseSrc.connect(noiseFilter);
+      noiseFilter.connect(noiseGain);
+      noiseGain.connect(this.masterGain);
+  
+      // 2. Sub-bass boom
+      const boomOsc = ctx.createOscillator();
+      boomOsc.type = 'sine';
+      boomOsc.frequency.setValueAtTime(160, now);
+      boomOsc.frequency.exponentialRampToValueAtTime(25, now + 0.7);
+  
+      const boomGain = ctx.createGain();
+      boomGain.gain.setValueAtTime(0.9, now);
+      boomGain.gain.exponentialRampToValueAtTime(0.001, now + 0.8);
+  
+      boomOsc.connect(boomGain);
+      boomGain.connect(this.masterGain);
+  
+      noiseSrc.start(now);
+      noiseSrc.stop(now + 0.8);
+      boomOsc.start(now);
+      boomOsc.stop(now + 0.85);
+    }
+  
     playImpact(strength = 1) {
       if (!this.ready) return;
-  
       const ctx = this.ctx;
       const now = ctx.currentTime;
       const intensity = Math.max(0.05, Math.min(1, strength / 15));
