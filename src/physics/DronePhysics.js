@@ -14,6 +14,8 @@ export class DronePhysics {
     this.currentPitch = 0;
     this.currentRoll = 0;
     this.currentYaw = 0;
+
+    this.gravityScale = 1.0; // NEW: multiplier for map-specific gravity (e.g. orbital station = 0.35)
   }
 
   setDroneProfile(profile) {
@@ -45,7 +47,7 @@ export class DronePhysics {
 
     // Gravity & Lift
     const gravityMultiplier = this.throttle < 0.2 ? 1.6 : 1.0;
-    const gravity = new THREE.Vector3(0, -9.81 * this.mass * gravityMultiplier, 0);
+    const gravity = new THREE.Vector3(0, -9.81 * this.mass * gravityMultiplier * this.gravityScale, 0); // CHANGED: applied gravityScale
     
     const liftMagnitude = this.throttle * this.maxThrust * 1.5; 
     const localThrust = new THREE.Vector3(0, liftMagnitude, 0);

@@ -9,6 +9,236 @@ import { generatePBRTexture } from './utils/pbrTextures';
 import EngineSound from './audio/EngineSound';
 import HUD from './components/HUD';
 
+// ============================================================
+// BIOME SCENERY GENERATORS
+// Each function populates `scene` with props specific to a map theme.
+// ============================================================
+
+function generateTrees(scene) {
+  const treeTrunkGeo = new THREE.CylinderGeometry(0.4, 0.6, 3, 6);
+  const treeTrunkMat = new THREE.MeshStandardMaterial({ color: '#5c4033', roughness: 0.9 });
+  const treeLeavesGeo = new THREE.ConeGeometry(2.5, 6, 6);
+  const treeLeavesMat = new THREE.MeshStandardMaterial({ color: '#1b5e20', roughness: 0.8 });
+
+  for (let i = 0; i < 40; i++) {
+    const x = (Math.random() - 0.5) * 300;
+    const z = (Math.random() - 0.5) * 300;
+    if (Math.abs(x) < 25 && Math.abs(z) < 25) continue;
+
+    const treeGroup = new THREE.Group();
+    const trunk = new THREE.Mesh(treeTrunkGeo, treeTrunkMat);
+    trunk.position.y = 1.5;
+    trunk.castShadow = true;
+    treeGroup.add(trunk);
+
+    const leaves = new THREE.Mesh(treeLeavesGeo, treeLeavesMat);
+    leaves.position.y = 4.5;
+    leaves.castShadow = true;
+    treeGroup.add(leaves);
+
+    treeGroup.position.set(x, 0, z);
+    scene.add(treeGroup);
+  }
+}
+
+function generateCyberBuildings(scene, hasRooftopPads) {
+  const buildingMat = new THREE.MeshStandardMaterial({ color: '#0f172a', roughness: 0.2, metalness: 0.8 });
+  const padMat = new THREE.MeshBasicMaterial({ color: '#38bdf8', side: THREE.DoubleSide });
+
+  for (let i = 0; i < 30; i++) {
+    const x = (Math.random() - 0.5) * 300;
+    const z = (Math.random() - 0.5) * 300;
+    if (Math.abs(x) < 30 && Math.abs(z) < 30) continue;
+
+    const height = 20 + Math.random() * 40;
+    const bld = new THREE.Mesh(new THREE.BoxGeometry(10, height, 10), buildingMat);
+    bld.position.set(x, height / 2, z);
+    bld.castShadow = true;
+    scene.add(bld);
+
+    if (hasRooftopPads && Math.random() > 0.6) {
+      const pad = new THREE.Mesh(new THREE.RingGeometry(1.5, 2.2, 24), padMat);
+      pad.rotation.x = -Math.PI / 2;
+      pad.position.set(x, height + 0.05, z);
+      scene.add(pad);
+    }
+  }
+}
+
+function generateCanyonWalls(scene) {
+  const rockMat = new THREE.MeshStandardMaterial({ color: '#8a6240', roughness: 0.95, metalness: 0.0 });
+
+  for (let side = -1; side <= 1; side += 2) {
+    for (let z = -150; z <= 150; z += 25) {
+      const offset = 45 + Math.random() * 25;
+      const height = 25 + Math.random() * 35;
+      const width = 15 + Math.random() * 10;
+      const rock = new THREE.Mesh(new THREE.BoxGeometry(width, height, 20), rockMat);
+      rock.position.set(side * offset, height / 2 - 2, z + (Math.random() - 0.5) * 10);
+      rock.rotation.y = Math.random() * 0.3;
+      rock.castShadow = true;
+      scene.add(rock);
+    }
+  }
+}
+
+function generateIceSpires(scene) {
+  const iceMat = new THREE.MeshStandardMaterial({
+    color: '#d9f0ff',
+    roughness: 0.15,
+    metalness: 0.1,
+    emissive: '#8ecbe8',
+    emissiveIntensity: 0.15
+  });
+
+  for (let i = 0; i < 35; i++) {
+    const x = (Math.random() - 0.5) * 300;
+    const z = (Math.random() - 0.5) * 300;
+    if (Math.abs(x) < 25 && Math.abs(z) < 25) continue;
+
+    const height = 6 + Math.random() * 14;
+    const spire = new THREE.Mesh(new THREE.ConeGeometry(1.2 + Math.random(), height, 7), iceMat);
+    spire.position.set(x, height / 2, z);
+    spire.rotation.y = Math.random() * Math.PI;
+    spire.castShadow = true;
+    scene.add(spire);
+  }
+}
+
+function generateObsidianRocks(scene) {
+  const rockMat = new THREE.MeshStandardMaterial({
+    color: '#14110f',
+    roughness: 0.3,
+    metalness: 0.4,
+    emissive: '#5c1a0a',
+    emissiveIntensity: 0.1
+  });
+
+  for (let i = 0; i < 30; i++) {
+    const x = (Math.random() - 0.5) * 300;
+    const z = (Math.random() - 0.5) * 300;
+    if (Math.abs(x) < 25 && Math.abs(z) < 25) continue;
+
+    const scale = 2 + Math.random() * 4;
+    const rock = new THREE.Mesh(new THREE.IcosahedronGeometry(scale, 0), rockMat);
+    rock.position.set(x, scale * 0.4, z);
+    rock.rotation.set(Math.random(), Math.random(), Math.random());
+    rock.castShadow = true;
+    scene.add(rock);
+  }
+}
+
+// Returns hazard zone descriptors {x, z, radius} consumed by CombatManager for lava damage
+function generateLavaRivers(scene, hazardZones) {
+  const lavaMat = new THREE.MeshStandardMaterial({
+    color: '#ff5722',
+    emissive: '#ff3300',
+    emissiveIntensity: 1.2,
+    roughness: 0.4
+  });
+
+  const riverSpots = [
+    { x: 30, z: -40, radius: 14 },
+    { x: -50, z: -90, radius: 18 },
+    { x: 10, z: -140, radius: 12 }
+  ];
+
+  riverSpots.forEach((spot) => {
+    const lava = new THREE.Mesh(new THREE.CircleGeometry(spot.radius, 24), lavaMat);
+    lava.rotation.x = -Math.PI / 2;
+    lava.position.set(spot.x, 0.06, spot.z);
+    scene.add(lava);
+    hazardZones.push(spot);
+  });
+}
+
+function generateStationModules(scene) {
+  const metalMat = new THREE.MeshStandardMaterial({ color: '#334155', roughness: 0.3, metalness: 0.85 });
+  const glowMat = new THREE.MeshStandardMaterial({ color: '#22d3ee', emissive: '#0891b2', emissiveIntensity: 0.8 });
+
+  for (let i = 0; i < 18; i++) {
+    const x = (Math.random() - 0.5) * 280;
+    const z = (Math.random() - 0.5) * 280;
+    if (Math.abs(x) < 20 && Math.abs(z) < 20) continue;
+
+    const y = 10 + Math.random() * 60;
+    const moduleGroup = new THREE.Group();
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(3, 3, 10, 8), metalMat);
+    body.rotation.z = Math.PI / 2;
+    moduleGroup.add(body);
+
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(3.5, 0.3, 8, 16), glowMat);
+    ring.rotation.y = Math.PI / 2;
+    moduleGroup.add(ring);
+
+    moduleGroup.position.set(x, y, z);
+    moduleGroup.rotation.y = Math.random() * Math.PI;
+    scene.add(moduleGroup);
+  }
+}
+
+function generateFloodedBuildings(scene) {
+  const buildingMat = new THREE.MeshStandardMaterial({ color: '#2d3f4a', roughness: 0.6, metalness: 0.2 });
+
+  for (let i = 0; i < 35; i++) {
+    const x = (Math.random() - 0.5) * 300;
+    const z = (Math.random() - 0.5) * 300;
+    if (Math.abs(x) < 25 && Math.abs(z) < 25) continue;
+
+    const height = 8 + Math.random() * 22;
+    const bld = new THREE.Mesh(new THREE.BoxGeometry(9, height, 9), buildingMat);
+    bld.position.set(x, height / 2 - 2, z);
+    bld.castShadow = true;
+    scene.add(bld);
+  }
+}
+
+function generateDuneRocks(scene) {
+  const duneMat = new THREE.MeshStandardMaterial({ color: '#a9825a', roughness: 1.0, metalness: 0.0 });
+
+  for (let i = 0; i < 25; i++) {
+    const x = (Math.random() - 0.5) * 300;
+    const z = (Math.random() - 0.5) * 300;
+    if (Math.abs(x) < 25 && Math.abs(z) < 25) continue;
+
+    const radius = 3 + Math.random() * 5;
+    const dune = new THREE.Mesh(new THREE.SphereGeometry(radius, 10, 6), duneMat);
+    dune.scale.y = 0.3;
+    dune.position.set(x, radius * 0.15, z);
+    dune.castShadow = true;
+    scene.add(dune);
+  }
+}
+
+function generateGlowingJungle(scene) {
+  const trunkMat = new THREE.MeshStandardMaterial({ color: '#1a1410', roughness: 0.9 });
+  const glowLeafMat = new THREE.MeshStandardMaterial({
+    color: '#0d9488',
+    emissive: '#5eead4',
+    emissiveIntensity: 0.9,
+    roughness: 0.6
+  });
+
+  for (let i = 0; i < 45; i++) {
+    const x = (Math.random() - 0.5) * 300;
+    const z = (Math.random() - 0.5) * 300;
+    if (Math.abs(x) < 25 && Math.abs(z) < 25) continue;
+
+    const treeGroup = new THREE.Group();
+    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.55, 4, 6), trunkMat);
+    trunk.position.y = 2;
+    trunk.castShadow = true;
+    treeGroup.add(trunk);
+
+    const leaves = new THREE.Mesh(new THREE.SphereGeometry(2.2, 8, 6), glowLeafMat);
+    leaves.position.y = 5;
+    treeGroup.add(leaves);
+
+    treeGroup.position.set(x, 0, z);
+    scene.add(treeGroup);
+  }
+}
+
 export default function App() {
   const containerRef = useRef(null);
   const [selectedDrone, setSelectedDrone] = useState(DRONES[0]);
@@ -16,7 +246,6 @@ export default function App() {
   const [telemetry, setTelemetry] = useState({ altitude: '0.0', speed: '0.0', throttle: '0', heading: 0, position: { x: 0, z: 0 }, rotationY: 0 });
   const [flightMode, setFlightMode] = useState('STABILIZE');
 
-  // Combat State for HUD
   const [combatState, setCombatState] = useState({
     health: 100,
     maxHealth: 100,
@@ -33,7 +262,6 @@ export default function App() {
   const cameraModeRef = useRef('CHASE');
   cameraModeRef.current = cameraMode;
 
-  // Audio State
   const engineSoundRef = useRef(null);
   const [audioEnabled, setAudioEnabled] = useState(false);
   const [volume, setVolume] = useState(0.7);
@@ -83,10 +311,10 @@ export default function App() {
   };
 
   useEffect(() => {
-    // 1. Scene, Camera, Renderer Setup with Film Tone Mapping & Shadows
+    // 1. Scene, Camera, Renderer Setup
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(selectedMap.skyColor);
-    scene.fog = new THREE.FogExp2(selectedMap.fogColor, 0.008);
+    scene.fog = new THREE.FogExp2(selectedMap.fogColor, selectedMap.fogDensity);
 
     const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
     const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -100,7 +328,7 @@ export default function App() {
       containerRef.current.appendChild(renderer.domElement);
     }
 
-    // 2. Outdoor Lighting Setup with Dynamic Shadows
+    // 2. Lighting
     const hemisphereLight = new THREE.HemisphereLight(0xffffff, 0x444444, selectedMap.ambientLight);
     hemisphereLight.position.set(0, 50, 0);
     scene.add(hemisphereLight);
@@ -113,7 +341,7 @@ export default function App() {
     dirLight.shadow.bias = -0.0001;
     scene.add(dirLight);
 
-    // 3. Ground Environment with Procedural PBR Textures
+    // 3. Ground
     const groundGeo = new THREE.PlaneGeometry(400, 400, 128, 128);
     const { albedoMap, normalMap } = generatePBRTexture(selectedMap.id);
 
@@ -122,8 +350,8 @@ export default function App() {
       map: albedoMap,
       normalMap: normalMap,
       normalScale: new THREE.Vector2(0.8, 0.8),
-      roughness: selectedMap.id === 'cyber' ? 0.2 : 0.85,
-      metalness: selectedMap.id === 'cyber' ? 0.6 : 0.05
+      roughness: selectedMap.groundRoughness,
+      metalness: selectedMap.groundMetalness
     });
 
     const ground = new THREE.Mesh(groundGeo, groundMat);
@@ -131,7 +359,7 @@ export default function App() {
     ground.receiveShadow = true;
     scene.add(ground);
 
-    // Dynamic Landing Pad Beacon
+    // Landing Pad Beacon
     const padGeo = new THREE.RingGeometry(2, 3, 32);
     const padMat = new THREE.MeshBasicMaterial({ color: '#38bdf8', side: THREE.DoubleSide });
     const landingPad = new THREE.Mesh(padGeo, padMat);
@@ -151,70 +379,110 @@ export default function App() {
     beacon.position.set(0, 60, 0);
     scene.add(beacon);
 
-    // 4. Conditional Scenery Props
-    if (selectedMap.hasTrees) {
-      const treeTrunkGeo = new THREE.CylinderGeometry(0.4, 0.6, 3, 6);
-      const treeTrunkMat = new THREE.MeshStandardMaterial({ color: '#5c4033', roughness: 0.9 });
-      const treeLeavesGeo = new THREE.ConeGeometry(2.5, 6, 6);
-      const treeLeavesMat = new THREE.MeshStandardMaterial({ color: '#1b5e20', roughness: 0.8 });
+    // 4. Biome-Specific Scenery Generation
+    const hazardZones = [];
 
-      for (let i = 0; i < 40; i++) {
-        const x = (Math.random() - 0.5) * 300;
-        const z = (Math.random() - 0.5) * 300;
-        if (Math.abs(x) < 25 && Math.abs(z) < 25) continue;
-
-        const treeGroup = new THREE.Group();
-        const trunk = new THREE.Mesh(treeTrunkGeo, treeTrunkMat);
-        trunk.position.y = 1.5;
-        trunk.castShadow = true;
-        treeGroup.add(trunk);
-
-        const leaves = new THREE.Mesh(treeLeavesGeo, treeLeavesMat);
-        leaves.position.y = 4.5;
-        leaves.castShadow = true;
-        treeGroup.add(leaves);
-
-        treeGroup.position.set(x, 0, z);
-        scene.add(treeGroup);
-      }
-    } else if (selectedMap.id === 'cyber') {
-      const buildingMat = new THREE.MeshStandardMaterial({ color: '#0f172a', roughness: 0.2, metalness: 0.8 });
-      for (let i = 0; i < 30; i++) {
-        const x = (Math.random() - 0.5) * 300;
-        const z = (Math.random() - 0.5) * 300;
-        if (Math.abs(x) < 30 && Math.abs(z) < 30) continue;
-
-        const height = 20 + Math.random() * 40;
-        const bldGeo = new THREE.BoxGeometry(10, height, 10);
-        const bld = new THREE.Mesh(bldGeo, buildingMat);
-        bld.position.set(x, height / 2, z);
-        bld.castShadow = true;
-        scene.add(bld);
-      }
+    if (selectedMap.propType === 'trees') {
+      generateTrees(scene);
+    } else if (selectedMap.propType === 'cyberBuildings') {
+      generateCyberBuildings(scene, selectedMap.hasRooftopPads);
+    } else if (selectedMap.propType === 'canyonWalls') {
+      generateCanyonWalls(scene);
+    } else if (selectedMap.propType === 'iceSpires') {
+      generateIceSpires(scene);
+    } else if (selectedMap.propType === 'obsidianRocks') {
+      generateObsidianRocks(scene);
+      generateLavaRivers(scene, hazardZones);
+    } else if (selectedMap.propType === 'stationModules') {
+      generateStationModules(scene);
+    } else if (selectedMap.propType === 'floodedBuildings') {
+      generateFloodedBuildings(scene);
+    } else if (selectedMap.propType === 'duneRocks') {
+      generateDuneRocks(scene);
+    } else if (selectedMap.propType === 'glowingJungle') {
+      generateGlowingJungle(scene);
     }
 
-    // 5. Dynamic Snow Particles (Rendered ONLY in Verdant Park)
+    if (selectedMap.hasWater) {
+      const waterGeo = new THREE.PlaneGeometry(400, 400);
+      const waterMat = new THREE.MeshStandardMaterial({
+        color: '#0e3a4a',
+        transparent: true,
+        opacity: 0.75,
+        roughness: 0.1,
+        metalness: 0.4
+      });
+      const water = new THREE.Mesh(waterGeo, waterMat);
+      water.rotation.x = -Math.PI / 2;
+      water.position.y = 0.05;
+      scene.add(water);
+    }
+
+    if (selectedMap.skyboxStars) {
+      const starCount = 2000;
+      const starGeo = new THREE.BufferGeometry();
+      const starPositions = new Float32Array(starCount * 3);
+      for (let i = 0; i < starCount * 3; i += 3) {
+        starPositions[i] = (Math.random() - 0.5) * 800;
+        starPositions[i + 1] = Math.random() * 400 - 50;
+        starPositions[i + 2] = (Math.random() - 0.5) * 800;
+      }
+      starGeo.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
+      const starMat = new THREE.PointsMaterial({ color: '#ffffff', size: 1.2, transparent: true, opacity: 0.9 });
+      const stars = new THREE.Points(starGeo, starMat);
+      scene.add(stars);
+    }
+
+    // 5. Atmospheric Particle Systems (biome-specific)
     let particles = null;
     let particleGeo = null;
+    let particlePhases = null;
+    const particleType = selectedMap.particleType;
 
-    if (selectedMap.particleType === 'snow') {
-      const particleCount = 800;
+    if (particleType === 'snow' || particleType === 'rain' || particleType === 'embers') {
+      const count = particleType === 'rain' ? 1200 : 800;
       particleGeo = new THREE.BufferGeometry();
-      const particlePositions = new Float32Array(particleCount * 3);
+      const positions = new Float32Array(count * 3);
 
-      for (let i = 0; i < particleCount * 3; i += 3) {
-        particlePositions[i] = (Math.random() - 0.5) * 200;
-        particlePositions[i + 1] = Math.random() * 50;
-        particlePositions[i + 2] = (Math.random() - 0.5) * 200;
+      for (let i = 0; i < count * 3; i += 3) {
+        positions[i] = (Math.random() - 0.5) * 200;
+        positions[i + 1] = Math.random() * 50;
+        positions[i + 2] = (Math.random() - 0.5) * 200;
       }
+      particleGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
 
-      particleGeo.setAttribute('position', new THREE.BufferAttribute(particlePositions, 3));
+      const particleColor = particleType === 'embers' ? '#ff8844' : (particleType === 'rain' ? '#a8c8d8' : '#ffffff');
+      const particleSize = particleType === 'rain' ? 0.35 : (particleType === 'embers' ? 0.5 : 0.7);
 
       const particleMat = new THREE.PointsMaterial({
-        color: '#ffffff',
-        size: 0.7,
+        color: particleColor,
+        size: particleSize,
         transparent: true,
-        opacity: 0.85,
+        opacity: particleType === 'rain' ? 0.6 : 0.85,
+        blending: THREE.AdditiveBlending
+      });
+
+      particles = new THREE.Points(particleGeo, particleMat);
+      scene.add(particles);
+    } else if (particleType === 'fireflies') {
+      const count = 250;
+      particleGeo = new THREE.BufferGeometry();
+      const positions = new Float32Array(count * 3);
+      particlePhases = new Float32Array(count);
+
+      for (let i = 0; i < count; i++) {
+        positions[i * 3] = (Math.random() - 0.5) * 200;
+        positions[i * 3 + 1] = 1 + Math.random() * 10;
+        positions[i * 3 + 2] = (Math.random() - 0.5) * 200;
+        particlePhases[i] = Math.random() * Math.PI * 2;
+      }
+      particleGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+
+      const particleMat = new THREE.PointsMaterial({
+        color: '#5eead4',
+        size: 0.6,
+        transparent: true,
+        opacity: 0.9,
         blending: THREE.AdditiveBlending
       });
 
@@ -222,16 +490,51 @@ export default function App() {
       scene.add(particles);
     }
 
-    // 6. Physics, Probe & Combat Manager Systems
+    // 6. High-Altitude Cloud Layer
+    const cloudCount = 700;
+    const cloudGeo = new THREE.BufferGeometry();
+    const cloudPositions = new Float32Array(cloudCount * 3);
+
+    for (let i = 0; i < cloudCount * 3; i += 3) {
+      cloudPositions[i] = (Math.random() - 0.5) * 380;
+      cloudPositions[i + 1] = 35 + Math.random() * 55;
+      cloudPositions[i + 2] = (Math.random() - 0.5) * 380;
+    }
+
+    cloudGeo.setAttribute('position', new THREE.BufferAttribute(cloudPositions, 3));
+    const cloudMat = new THREE.PointsMaterial({
+      color: '#f8fafc',
+      size: 4.5,
+      transparent: true,
+      opacity: 0.55,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false
+    });
+    const cloudPoints = new THREE.Points(cloudGeo, cloudMat);
+    scene.add(cloudPoints);
+
+    // 7. Storm Lightning System
+    let lightningLight = null;
+    let lightningTimer = 2 + Math.random() * 3;
+
+    if (selectedMap.lightningEnabled) {
+      lightningLight = new THREE.PointLight(0xffffff, 0, 400, 2);
+      lightningLight.position.set(0, 150, 0);
+      scene.add(lightningLight);
+    }
+
+    // 8. Physics, Probe & Combat Manager Systems
     const physics = new DronePhysics(selectedDrone);
+    physics.gravityScale = selectedMap.gravityScale ?? 1.0;
+
     const probeManager = new ProbeManager(scene, {
       onImpact: (impactSpeed) => {
         engineSoundRef.current?.playImpact(impactSpeed);
       }
     });
-    const combatManager = new CombatManager(scene, engineSoundRef.current);
+    const combatManager = new CombatManager(scene, engineSoundRef.current, { hazardZones });
 
-    // 7. Dynamic Drone Mesh Construction
+    // 9. Dynamic Drone Mesh Construction
     const droneGroup = new THREE.Group();
     const bodyMat = new THREE.MeshStandardMaterial({ color: selectedDrone.color, metalness: 0.85, roughness: 0.2 });
 
@@ -277,7 +580,7 @@ export default function App() {
 
     scene.add(droneGroup);
 
-    // 8. Key & Mouse Listeners (Camera Toggle, Probe Launch, Laser Fire)
+    // 10. Input Listeners
     const keys = {};
     const handleKeyDown = (e) => {
       keys[e.code] = true;
@@ -285,11 +588,9 @@ export default function App() {
         setCameraMode((prev) => (prev === 'CHASE' ? 'FPV' : 'CHASE'));
       }
       if (e.code === 'Space') {
-        // Primary Fire: Laser Cannon
         combatManager.firePlayerLaser(physics.position, physics.rotation, physics.velocity);
       }
       if (e.code === 'KeyE') {
-        // Eject sensor probe with current drone position, vector momentum, and heading
         probeManager.ejectProbe(physics.position, physics.velocity, physics.rotation, 18);
       }
     };
@@ -304,7 +605,7 @@ export default function App() {
     window.addEventListener('keyup', handleKeyUp);
     window.addEventListener('mousedown', handleMouseDown);
 
-    // 9. Animation & Physics Loop
+    // 11. Animation & Physics Loop
     let animationFrameId;
     const clock = new THREE.Clock();
 
@@ -312,10 +613,8 @@ export default function App() {
       animationFrameId = requestAnimationFrame(animate);
       const delta = Math.min(clock.getDelta(), 0.1);
 
-      // Keep combat manager's sound engine reference in sync with the audio lifecycle
       combatManager.soundEngine = engineSoundRef.current;
 
-      // Physics Integration
       if (!combatManager.isPlayerDead) {
         physics.update(delta, keys);
       }
@@ -326,33 +625,73 @@ export default function App() {
       droneGroup.position.copy(physics.position);
       droneGroup.rotation.copy(physics.rotation);
 
-      // Rotor spinning animation
       const spinSpeed = physics.throttle === 0 ? 0 : 20 + physics.throttle * 60;
       rotors.forEach((rotor, i) => {
         rotor.rotation.y += spinSpeed * delta * (i % 2 === 0 ? 1 : -1);
       });
 
-      // Engine audio update (rotor hum + wind noise tied to throttle/speed)
       if (engineSoundRef.current?.ready) {
         const droneSpeed = combatManager.isPlayerDead ? 0 : physics.velocity.length();
         const droneThrottle = combatManager.isPlayerDead ? 0 : physics.throttle;
         engineSoundRef.current.update(droneThrottle, droneSpeed);
       }
 
-      // Animate snowfall (only active in Verdant Park)
+      // Drift high-altitude clouds
+      const cloudPos = cloudGeo.attributes.position.array;
+      for (let i = 0; i < cloudPos.length; i += 3) {
+        cloudPos[i + 2] += delta * 1.2;
+        if (cloudPos[i + 2] > 200) cloudPos[i + 2] = -200;
+      }
+      cloudGeo.attributes.position.needsUpdate = true;
+
+      // Animate atmospheric particles
       if (particles && particleGeo) {
         const positions = particleGeo.attributes.position.array;
-        for (let i = 1; i < positions.length; i += 3) {
-          positions[i] -= delta * 4;
-          if (positions[i] < 0) positions[i] = 50;
+
+        if (particleType === 'snow') {
+          for (let i = 1; i < positions.length; i += 3) {
+            positions[i] -= delta * 4;
+            if (positions[i] < 0) positions[i] = 50;
+          }
+        } else if (particleType === 'rain') {
+          for (let i = 1; i < positions.length; i += 3) {
+            positions[i] -= delta * 28;
+            if (positions[i] < 0) positions[i] = 50;
+          }
+        } else if (particleType === 'embers') {
+          for (let i = 1; i < positions.length; i += 3) {
+            positions[i] += delta * 3;
+            if (positions[i] > 50) positions[i] = 0;
+          }
+        } else if (particleType === 'fireflies' && particlePhases) {
+          const t = clock.getElapsedTime();
+          for (let i = 0; i < particlePhases.length; i++) {
+            positions[i * 3 + 1] += Math.sin(t * 1.5 + particlePhases[i]) * delta * 0.3;
+          }
         }
+
         particleGeo.attributes.position.needsUpdate = true;
       }
 
-            // Dynamic Camera Positioning (Chase vs FPV) — crosshair now matches actual fire direction
-      const noseForward = new THREE.Vector3(0, 0, 1).applyEuler(physics.rotation);
+      // Lightning flashes (Storm Front)
+      if (selectedMap.lightningEnabled && lightningLight) {
+        lightningTimer -= delta;
+        if (lightningTimer <= 0) {
+          lightningLight.intensity = 5 + Math.random() * 4;
+          engineSoundRef.current?.playThunder();
+          lightningTimer = 3 + Math.random() * 7;
+        } else {
+          lightningLight.intensity = THREE.MathUtils.lerp(lightningLight.intensity, 0, delta * 5);
+        }
+      }
 
-      // Dynamic Camera Positioning (Chase vs FPV)
+      // Pulsing fog density (Desert Dust Storm)
+      if (selectedMap.fogPulse && scene.fog) {
+        const t = clock.getElapsedTime();
+        scene.fog.density = selectedMap.fogDensity + Math.sin(t * 0.3) * (selectedMap.fogDensity * 0.4);
+      }
+
+      // Camera Positioning (Chase vs FPV)
       if (cameraModeRef.current === 'CHASE') {
         const targetCameraOffset = new THREE.Vector3(0, 4.5, -9).applyEuler(new THREE.Euler(0, physics.rotation.y, 0));
         camera.position.lerp(physics.position.clone().add(targetCameraOffset), delta * 5);
@@ -362,6 +701,7 @@ export default function App() {
         camera.position.copy(physics.position).add(fpvOffset);
         camera.lookAt(physics.position.clone().add(new THREE.Vector3(0, 0.4, 10).applyEuler(physics.rotation)));
       }
+
       let headingDeg = Math.round((-physics.rotation.y * (180 / Math.PI)) % 360);
       if (headingDeg < 0) headingDeg += 360;
 
@@ -382,7 +722,7 @@ export default function App() {
         isDead: combatManager.isPlayerDead,
         respawnCountdown: combatEvents.respawnCountdown,
         hitMarker: combatEvents.hitRegistered,
-        playerDamageFlash: combatEvents.playerHitRegistered,
+        playerDamageFlash: combatEvents.playerHitRegistered || combatEvents.hazardHit,
         radarEnemies: combatManager.getRadarEnemies()
       });
 

@@ -22,7 +22,7 @@ export default function HUD({
   const [activeTab, setActiveTab] = useState('DRONES');
   const [showHitMarker, setShowHitMarker] = useState(false);
   const [showDamageFlash, setShowDamageFlash] = useState(false);
-
+  const [showFullMap, setShowFullMap] = useState(false);
   const RADAR_RADIUS = 70;
   const MAP_SCALE = 0.55;
 
@@ -179,7 +179,7 @@ export default function HUD({
             </div>
 
             {activeTab === 'DRONES' ? (
-              <div className="flex flex-col gap-2 max-h-[170px] overflow-y-auto pr-1">
+              <div className="flex flex-col gap-2 max-h-[280px] overflow-y-auto pr-1">
                 {DRONES.map((drone) => {
                   const isSelected = selectedDrone.id === drone.id;
                   return (
@@ -232,6 +232,65 @@ export default function HUD({
             >
               <Camera className="w-3.5 h-3.5" /> Cinematic Camera
             </button>
+            <button
+              onClick={() => setShowFullMap((prev) => !prev)}
+              className={`mt-1 w-full py-2.5 font-bold rounded-xl transition-all shadow-lg flex items-center justify-center gap-2 text-xs uppercase tracking-wider border ${showFullMap ? 'bg-red-500 text-white border-red-400' : 'bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white border-amber-400/30'}`}
+            >
+              <MapPin className="w-4 h-4" /> {showFullMap ? 'CLOSE TACTICAL MAP' : 'OPEN TACTICAL MAP'}
+            </button>
+                  {/* Full Tactical Arena Map (activated by button) */}
+      {showFullMap && (
+        <div className="absolute inset-0 z-[15] bg-gray-950/70 backdrop-blur-md flex items-center justify-center pointer-events-none">
+          <div className="relative w-[600px] h-[500px] bg-gray-900/90 border-2 border-cyan-500/50 rounded-3xl shadow-2xl overflow-hidden pointer-events-auto">
+            {/* Header */}
+            <div className="absolute top-0 left-0 right-0 bg-gradient-to-r from-cyan-900/80 to-blue-900/80 border-b border-cyan-500/30 px-4 py-2 flex items-center justify-between z-10">
+              <span className="text-cyan-300 font-black text-sm tracking-widest">ARENA OVERVIEW — LEVEL 1</span>
+              <button onClick={() => setShowFullMap(false)} className="text-xs bg-red-500/20 text-red-300 px-2 py-0.5 rounded hover:bg-red-500 hover:text-white transition-colors">CLOSE</button>
+            </div>
+
+            {/* Arena Canvas Area */}
+            <div className="absolute top-[44px] left-3 right-3 bottom-3 rounded-xl bg-gradient-to-b from-gray-950 to-blue-950/50 border border-gray-800 overflow-hidden">
+              {/* Biome Background Regions (using your config) */}
+              <div className="absolute top-[20px] left-[80px] w-[120px] h-[80px] bg-emerald-950/40 border border-emerald-800/40 rounded-lg" title="Verdant Park" />
+              <div className="absolute top-[250px] left-[300px] w-[140px] h-[100px] bg-indigo-950/40 border border-indigo-800/40 rounded-lg" title="Neon Cyber City" />
+              <div className="absolute bottom-[40px] left-[40px] w-[100px] h-[120px] bg-amber-950/30 border border-amber-800/40 rounded-lg" title="Canyon Desert" />
+
+              {/* Player Position */}
+              <div 
+                className="absolute w-4 h-4 bg-cyan-400 rounded-full shadow-[0_0_12px_#38bdf8] border-2 border-white z-20"
+                style={{
+                  left: `${(telemetry.position.x / 200 + 1) * 50}%`,
+                  bottom: `${(telemetry.position.z / 200 + 1) * 50}%`, // Simple projection; adjust scale as needed
+                  transform: 'translate(-50%, 50%) rotate(-45deg)'
+                }}
+              />
+
+              {/* Enemy Positions */}
+              {combatState.radarEnemies?.map((e, i) => (
+                <div
+                  key={i}
+                  className="absolute w-3 h-3 bg-red-500 rounded-full shadow-[0_0_8px_#ef4444] border border-red-300 z-20 animate-pulse"
+                  style={{
+                    left: `50%`, // Simplified projection; real implementation uses same projection formula
+                    top: `50%`,
+                    transform: `translate(-50%, -50%)`
+                  }}
+                  title="Hostile Drone"
+                />
+              ))}
+            </div>
+
+            {/* Legend / Stats */}
+            <div className="absolute bottom-1 left-1 right-1 bg-black/60 rounded-lg px-3 py-2 text-[9px] font-mono text-gray-300 flex gap-4">
+              <span><span className="text-cyan-400 font-bold">●</span> YOU</span>
+              <span><span className="text-red-500 font-bold">●</span> HOSTILE</span>
+              <span><span className="text-emerald-500 font-bold">■</span> VERDANT</span>
+              <span><span className="text-indigo-400 font-bold">■</span> NEON CYBER</span>
+              <span><span className="text-amber-600 font-bold">■</span> CANYON</span>
+            </div>
+          </div>
+        </div>
+      )}
           </div>
 
           {/* Right Panel: Health & Telemetry HUD */}

@@ -227,7 +227,48 @@ export default class EngineSound {
       boomOsc.start(now);
       boomOsc.stop(now + 0.85);
     }
-  
+      // ------------------------------------------------------------
+  // Thunder Rumble (Storm Front lightning strikes)
+  // ------------------------------------------------------------
+  playThunder() {
+    if (!this.ready) return;
+    const ctx = this.ctx;
+    const now = ctx.currentTime;
+
+    const noiseBuffer = this._createNoiseBuffer(1.2);
+    const noiseSrc = ctx.createBufferSource();
+    noiseSrc.buffer = noiseBuffer;
+
+    const noiseFilter = ctx.createBiquadFilter();
+    noiseFilter.type = 'lowpass';
+    noiseFilter.frequency.setValueAtTime(400, now);
+    noiseFilter.frequency.exponentialRampToValueAtTime(60, now + 1.1);
+
+    const noiseGain = ctx.createGain();
+    noiseGain.gain.setValueAtTime(0.5, now);
+    noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 1.2);
+
+    noiseSrc.connect(noiseFilter);
+    noiseFilter.connect(noiseGain);
+    noiseGain.connect(this.masterGain);
+
+    const rumbleOsc = ctx.createOscillator();
+    rumbleOsc.type = 'sine';
+    rumbleOsc.frequency.setValueAtTime(55, now);
+    rumbleOsc.frequency.exponentialRampToValueAtTime(18, now + 1.0);
+
+    const rumbleGain = ctx.createGain();
+    rumbleGain.gain.setValueAtTime(0.7, now);
+    rumbleGain.gain.exponentialRampToValueAtTime(0.001, now + 1.1);
+
+    rumbleOsc.connect(rumbleGain);
+    rumbleGain.connect(this.masterGain);
+
+    noiseSrc.start(now);
+    noiseSrc.stop(now + 1.2);
+    rumbleOsc.start(now);
+    rumbleOsc.stop(now + 1.15);
+  }
     playImpact(strength = 1) {
       if (!this.ready) return;
       const ctx = this.ctx;
