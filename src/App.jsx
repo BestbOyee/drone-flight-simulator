@@ -247,6 +247,8 @@ export default function App() {
   const [selectedMap, setSelectedMap] = useState(MAPS[0]);
   const [telemetry, setTelemetry] = useState({ altitude: '0.0', speed: '0.0', throttle: '0', heading: 0, position: { x: 0, z: 0 }, rotationY: 0 });
   const [flightMode, setFlightMode] = useState('STABILIZE');
+  const flightModeRef = useRef('STABILIZE');
+  flightModeRef.current = flightMode;
 
   const [combatState, setCombatState] = useState({
     health: 100,
@@ -634,16 +636,24 @@ export default function App() {
     window.addEventListener('keyup', handleKeyUp);
     window.addEventListener('mousedown', handleMouseDown);
 
-    // 11. Animation & Physics Loop
-    let animationFrameId;
-    const clock = new THREE.Clock();
+        // 11. Animation & Physics Loop
+        let animationFrameId;
+        const clock = new THREE.Clock();
+    
+        // Camera spring-damper + FOV-on-speed state
+        const cameraVelocity = new THREE.Vector3();
+        const BASE_FOV = 60;
+        const MAX_FOV = 92;
+        const FOV_SPEED_FACTOR = 0.6;
+        const CAMERA_SPRING_STIFFNESS = 60;
+        const CAMERA_SPRING_DAMPING = 12;
+        let currentFov = BASE_FOV;
 
     const animate = () => {
       animationFrameId = requestAnimationFrame(animate);
       const delta = Math.min(clock.getDelta(), 0.1);
 
       combatManager.soundEngine = engineSoundRef.current;
-
       if (!combatManager.isPlayerDead) {
         physics.update(delta, keys);
       }
@@ -722,17 +732,34 @@ export default function App() {
         scene.fog.density = selectedMap.fogDensity + Math.sin(t * 0.3) * (selectedMap.fogDensity * 0.4);
       }
 
-      // Camera Positioning (Chase vs FPV)
-      if (cameraModeRef.current === 'CHASE') {
-        const targetCameraOffset = new THREE.Vector3(0, 4.5, -9).applyEuler(new THREE.Euler(0, physics.rotation.y, 0));
-        camera.position.lerp(physics.position.clone().add(targetCameraOffset), delta * 5);
-        camera.lookAt(physics.position.clone().add(new THREE.Vector3(0, 0.8, 0)));
-      } else {
-        const fpvOffset = new THREE.Vector3(0, 0.4, 0.4).applyEuler(physics.rotation);
-        camera.position.copy(physics.position).add(fpvOffset);
-        camera.lookAt(physics.position.clone().add(new THREE.Vector3(0, 0.4, 10).applyEuler(physics.rotation)));
-      }
-
+            // Camera Positioning (Chase vs FPV)
+            if (cameraModeRef.current === 'CHASE') {
+              const targetCameraOffset = new THREE.Vector3(0, 4.5, -9).applyEuler(new THREE.Euler(0, physics.rotation.y, 0));
+              const targetCameraPos = physics.position.clone().add(targetCameraOffset);
+      
+              const springForce = targetCameraPos.clone().sub(camera.position).multiplyScalar(CAMERA_SPRING_STIFFNESS);
+              const dampingForce = cameraVelocity.clone().multiplyScalar(-CAMERA_SPRING_DAMPING);
+              const cameraAccel = springForce.add(dampingForce);
+      
+              cameraVelocity.addScaledVector(cameraAccel, delta);
+              camera.position.addScaledVector(cameraVelocity, delta);
+      
+              camera.lookAt(physics.position.clone().add(new THREE.Vector3(0, 0.8, 0)));
+            } else {
+              const fpvOffset = new THREE.Vector3(0, 0.4, 0.4).applyEuler(physics.rotation);
+              camera.position.copy(physics.position).add(fpvOffset);
+              camera.lookAt(physics.position.clone().add(new THREE.Vector3(0, 0.4, 10).applyEuler(physics.rotation)));
+              cameraVelocity.set(0, 0, 0); // prevent spring overshoot/snap when switching back to CHASE
+            }
+      
+            // FOV-on-speed
+            const droneSpeedForFov = physics.velocity.length();
+            const targetFov = THREE.MathUtils.clamp(BASE_FOV + droneSpeedForFov * FOV_SPEED_FACTOR, BASE_FOV, MAX_FOV);
+            currentFov = THREE.MathUtils.lerp(currentFov, targetFov, delta * 3);
+            if (Math.abs(camera.fov - currentFov) > 0.05) {
+              camera.fov = currentFov;
+              camera.updateProjectionMatrix();
+            }
       let headingDeg = Math.round((-physics.rotation.y * (180 / Math.PI)) % 360);
       if (headingDeg < 0) headingDeg += 360;
 
