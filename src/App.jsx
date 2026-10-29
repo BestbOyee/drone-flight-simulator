@@ -8,6 +8,8 @@ import { CombatManager } from './physics/CombatManager';
 import { generatePBRTexture } from './utils/pbrTextures';
 import EngineSound from './audio/EngineSound';
 import HUD from './components/HUD';
+import mapModules from './maps/registry.js';   
+import { buildSkyDome } from './utils/skyDome';
 
 // ============================================================
 // BIOME SCENERY GENERATORS
@@ -313,8 +315,12 @@ export default function App() {
   useEffect(() => {
     // 1. Scene, Camera, Renderer Setup
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(selectedMap.skyColor);
     scene.fog = new THREE.FogExp2(selectedMap.fogColor, selectedMap.fogDensity);
+    const skyDome = buildSkyDome({
+      horizonColor: selectedMap.fogColor,
+      zenithColor: selectedMap.skyColor,
+    });
+    scene.add(skyDome.mesh);
 
     const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
     const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -341,48 +347,71 @@ export default function App() {
     dirLight.shadow.bias = -0.0001;
     scene.add(dirLight);
 
-    // 3. Ground
-    const groundGeo = new THREE.PlaneGeometry(400, 400, 128, 128);
-    const { albedoMap, normalMap } = generatePBRTexture(selectedMap.id);
+        // 3. Ground
+        const activeMapModule = mapModules[selectedMap.id] || null; // MOVED UP from section 4
+        let groundGetHeightAt = () => 0;
+        let groundNoise2D = () => 0;
+        let terrainResult = null;
+    
+        if (activeMapModule) {
+          terrainResult = activeMapModule.generateTerrain(scene, THREE);
+          groundGetHeightAt = terrainResult.getHeightAt;
+          groundNoise2D = terrainResult.noise2D || groundNoise2D;
+        } else {
+          // Legacy flat ground path (unmigrated maps only)
+          const groundGeo = new THREE.PlaneGeometry(400, 400, 128, 128);
+          const { albedoMap, normalMap } = generatePBRTexture(selectedMap.id);
+    
+          const groundMat = new THREE.MeshStandardMaterial({
+            color: selectedMap.groundColor,
+            map: albedoMap,
+            normalMap: normalMap,
+            normalScale: new THREE.Vector2(0.8, 0.8),
+            roughness: selectedMap.groundRoughness,
+            metalness: selectedMap.groundMetalness
+          });
+    
+          const ground = new THREE.Mesh(groundGeo, groundMat);
+          ground.rotation.x = -Math.PI / 2;
+          ground.receiveShadow = true;
+          scene.add(ground);
+        }
+    
+        // Landing Pad Beacon (now sits at correct terrain height instead of hardcoded y=0)
+        const padGroundY = groundGetHeightAt(0, 0);
+        const padGeo = new THREE.RingGeometry(2, 3, 32);
+        const padMat = new THREE.MeshBasicMaterial({ color: '#38bdf8', side: THREE.DoubleSide });
+        const landingPad = new THREE.Mesh(padGeo, padMat);
+        landingPad.rotation.x = -Math.PI / 2;
+        landingPad.position.y = padGroundY + 0.02;
+        scene.add(landingPad);
+    
+        const beaconGeo = new THREE.CylinderGeometry(0.2, 3.5, 120, 16, 1, true);
+        const beaconMat = new THREE.MeshBasicMaterial({
+          color: '#38bdf8',
+          transparent: true,
+          opacity: 0.35,
+          side: THREE.DoubleSide,
+          blending: THREE.AdditiveBlending
+        });
+        const beacon = new THREE.Mesh(beaconGeo, beaconMat);
+        beacon.position.set(0, padGroundY + 60, 0);
+        scene.add(beacon);
 
-    const groundMat = new THREE.MeshStandardMaterial({
-      color: selectedMap.groundColor,
-      map: albedoMap,
-      normalMap: normalMap,
-      normalScale: new THREE.Vector2(0.8, 0.8),
-      roughness: selectedMap.groundRoughness,
-      metalness: selectedMap.groundMetalness
-    });
-
-    const ground = new THREE.Mesh(groundGeo, groundMat);
-    ground.rotation.x = -Math.PI / 2;
-    ground.receiveShadow = true;
-    scene.add(ground);
-
-    // Landing Pad Beacon
-    const padGeo = new THREE.RingGeometry(2, 3, 32);
-    const padMat = new THREE.MeshBasicMaterial({ color: '#38bdf8', side: THREE.DoubleSide });
-    const landingPad = new THREE.Mesh(padGeo, padMat);
-    landingPad.rotation.x = -Math.PI / 2;
-    landingPad.position.y = 0.02;
-    scene.add(landingPad);
-
-    const beaconGeo = new THREE.CylinderGeometry(0.2, 3.5, 120, 16, 1, true);
-    const beaconMat = new THREE.MeshBasicMaterial({
-      color: '#38bdf8',
-      transparent: true,
-      opacity: 0.35,
-      side: THREE.DoubleSide,
-      blending: THREE.AdditiveBlending
-    });
-    const beacon = new THREE.Mesh(beaconGeo, beaconMat);
-    beacon.position.set(0, 60, 0);
-    scene.add(beacon);
-
+      
     // 4. Biome-Specific Scenery Generation
     const hazardZones = [];
+    let activeMapBuilt = null;          // holds terrain/props/atmosphere for any migrated map
 
-    if (selectedMap.propType === 'trees') {
+    if (activeMapModule) {
+      // Terrain already built in section 3 above — just add props/atmosphere/hazards
+      const props = activeMapModule.generateProps(scene, THREE, groundGetHeightAt, groundNoise2D);
+      const atmosphere = activeMapModule.generateAtmosphere(scene, THREE);
+      const moduleHazards = activeMapModule.generateHazards(scene, THREE);
+      moduleHazards.forEach(z => hazardZones.push(z));
+
+      activeMapBuilt = { terrain: terrainResult, props, atmosphere };
+    } else if (selectedMap.propType === 'trees') {
       generateTrees(scene);
     } else if (selectedMap.propType === 'cyberBuildings') {
       generateCyberBuildings(scene, selectedMap.hasRooftopPads);
@@ -526,7 +555,7 @@ export default function App() {
     // 8. Physics, Probe & Combat Manager Systems
     const physics = new DronePhysics(selectedDrone);
     physics.gravityScale = selectedMap.gravityScale ?? 1.0;
-
+    physics.getGroundHeight = groundGetHeightAt;
     const probeManager = new ProbeManager(scene, {
       onImpact: (impactSpeed) => {
         engineSoundRef.current?.playImpact(impactSpeed);
@@ -635,7 +664,9 @@ export default function App() {
         const droneThrottle = combatManager.isPlayerDead ? 0 : physics.throttle;
         engineSoundRef.current.update(droneThrottle, droneSpeed);
       }
-
+      if (activeMapBuilt) {
+        activeMapBuilt.atmosphere.update(delta, clock.getElapsedTime());
+      }
       // Drift high-altitude clouds
       const cloudPos = cloudGeo.attributes.position.array;
       for (let i = 0; i < cloudPos.length; i += 3) {
@@ -745,6 +776,17 @@ export default function App() {
       window.removeEventListener('resize', handleResize);
       cancelAnimationFrame(animationFrameId);
       combatManager.dispose();
+
+      // Clean up map module if one was loaded
+      if (activeMapBuilt && activeMapModule) {
+        activeMapModule.dispose(scene, activeMapBuilt);
+      }
+
+      // Clean up procedural sky dome
+      if (skyDome) {
+        skyDome.dispose();
+      }
+
       if (containerRef.current) {
         containerRef.current.innerHTML = '';
       }

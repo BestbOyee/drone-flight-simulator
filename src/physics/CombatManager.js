@@ -7,16 +7,16 @@ export class CombatManager {
     this.hazardZones = options.hazardZones || [];
     this.hazardDamageTimer = 0;
 
-    this.playerHealth = 100;
-    this.playerMaxHealth = 100;
+    this.playerHealth = 1000;
+    this.playerMaxHealth = 1000;
     this.kills = 0;
     this.score = 0;
     this.isPlayerDead = false;
     this.respawnTimer = 0;
 
     this.projectiles = [];
-    this.playerLaserSpeed = 150;
-    this.enemyLaserSpeed = 85;
+    this.playerLaserSpeed = 135;
+    this.enemyLaserSpeed = 70;
     this.laserCooldown = 0;
 
     this.playerBoltGeo = new THREE.CylinderGeometry(0.08, 0.08, 1.8, 8);
@@ -119,8 +119,8 @@ export class CombatManager {
     const spawnPos = playerPos.clone().add(forwardDir.clone().multiplyScalar(1.2));
 
     // Aim Assist: snap toward nearest enemy within a forgiving cone
-    const ASSIST_CONE_RAD = THREE.MathUtils.degToRad(28);
-    const ASSIST_MAX_RANGE = 140;
+    const ASSIST_CONE_RAD = THREE.MathUtils.degToRad(24);
+    const ASSIST_MAX_RANGE = 115;
     let fireDir = forwardDir.clone();
     let bestAngle = ASSIST_CONE_RAD;
     let bestEnemy = null;

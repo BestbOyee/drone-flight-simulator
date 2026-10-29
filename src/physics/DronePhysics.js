@@ -16,6 +16,7 @@ export class DronePhysics {
     this.currentYaw = 0;
 
     this.gravityScale = 1.0; // NEW: multiplier for map-specific gravity (e.g. orbital station = 0.35)
+    this.getGroundHeight = () => 0; // NEW: overridden per-map to the terrain's getHeightAt(x,z); defaults to flat ground
   }
 
   setDroneProfile(profile) {
@@ -75,8 +76,9 @@ export class DronePhysics {
     this.velocity.addScaledVector(acceleration, delta);
     this.position.addScaledVector(this.velocity, delta);
 
-    if (this.position.y < 0) {
-      this.position.y = 0;
+    const groundY = this.getGroundHeight(this.position.x, this.position.z);
+    if (this.position.y < groundY) {
+      this.position.y = groundY;
       this.velocity.set(0, 0, 0);
     }
 
