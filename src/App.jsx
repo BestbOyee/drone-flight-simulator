@@ -407,12 +407,17 @@ export default function App() {
 
     if (activeMapModule) {
       // Terrain already built in section 3 above — just add props/atmosphere/hazards
-      const props = activeMapModule.generateProps(scene, THREE, groundGetHeightAt, groundNoise2D);
+      const propsResult = activeMapModule.generateProps(scene, THREE, groundGetHeightAt, groundNoise2D);
       const atmosphere = activeMapModule.generateAtmosphere(scene, THREE);
       const moduleHazards = activeMapModule.generateHazards(scene, THREE);
       moduleHazards.forEach(z => hazardZones.push(z));
 
-      activeMapBuilt = { terrain: terrainResult, props, atmosphere };
+      activeMapBuilt = {
+        terrain: terrainResult,
+        props: propsResult.entries,
+        colliders: propsResult.colliders || [],
+        atmosphere,
+      };
     } else if (selectedMap.propType === 'trees') {
       generateTrees(scene);
     } else if (selectedMap.propType === 'cyberBuildings') {
@@ -558,6 +563,8 @@ export default function App() {
     const physics = new DronePhysics(selectedDrone);
     physics.gravityScale = selectedMap.gravityScale ?? 1.0;
     physics.getGroundHeight = groundGetHeightAt;
+    physics.arenaRadius = activeMapModule ? 390 : 190;
+    physics.propColliders = activeMapBuilt?.colliders || [];
     const probeManager = new ProbeManager(scene, {
       onImpact: (impactSpeed) => {
         engineSoundRef.current?.playImpact(impactSpeed);

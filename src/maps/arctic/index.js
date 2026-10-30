@@ -35,6 +35,7 @@ function generateTerrain(scene) {
 
 function generateProps(scene, THREE_, getHeightAt) {
   const disposables = [];
+  const colliders = [];
 
   // --- Tall ice spires ---
   const spireGeo = new THREE.ConeGeometry(1.3, 1, 7); // unit height, scaled per-instance via Y
@@ -58,6 +59,10 @@ function generateProps(scene, THREE_, getHeightAt) {
     ...t,
     y: t.y + t.scale / 2, // lift so base sits on terrain, not centered through it
   }));
+
+  spireTransforms.forEach(t => {
+    colliders.push({ x: t.x, y: t.y, z: t.z, radius: t.scale * 1.1 });
+  });
 
   const spires = createInstancedProps({
     geometry: spireGeo,
@@ -87,6 +92,10 @@ function generateProps(scene, THREE_, getHeightAt) {
     exclusionZones: [SPAWN_EXCLUSION],
   });
 
+  boulderTransforms.forEach(t => {
+    colliders.push({ x: t.x, y: t.y, z: t.z, radius: t.scale * 1.0 });
+  });
+
   const boulders = createInstancedProps({
     geometry: boulderGeo,
     material: boulderMat,
@@ -97,9 +106,8 @@ function generateProps(scene, THREE_, getHeightAt) {
   scene.add(boulders.mesh);
   disposables.push({ ...boulders, transforms: boulderTransforms });
 
-  return disposables;
+  return { entries: disposables, colliders };
 }
-
 function generateAtmosphere() {
   // Aurora shader + ground-hugging blowing-snow layer land in Phase 5.
   // Legacy particleType: 'snow' system in App.jsx already covers falling

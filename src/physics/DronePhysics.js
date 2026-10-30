@@ -36,6 +36,8 @@ export class DronePhysics {
     // Collision tuning
     this.groundFriction = 0.92;
     this.normalSampleDist = 0.5;
+    this.arenaRadius = 390; // overridden per-map in App.jsx
+    this.propColliders = [];
   }
 
   setDroneProfile(profile) {
@@ -111,34 +113,69 @@ export class DronePhysics {
     this.position.addScaledVector(this.velocity, delta);
 
     // Soft collision response (slide along slopes/walls instead of hard stop)
-    const groundY = this.getGroundHeight(this.position.x, this.position.z);
-    if (this.position.y < groundY) {
-      const d = this.normalSampleDist;
-      const hL = this.getGroundHeight(this.position.x - d, this.position.z);
-      const hR = this.getGroundHeight(this.position.x + d, this.position.z);
-      const hD = this.getGroundHeight(this.position.x, this.position.z - d);
-      const hU = this.getGroundHeight(this.position.x, this.position.z + d);
+        // --- Terrain Collision (floor + steep walls) ---
+        const groundY = this.getGroundHeight(this.position.x, this.position.z);
+        if (this.position.y < groundY) {
+          const d = this.normalSampleDist;
+          const hL = this.getGroundHeight(this.position.x - d, this.position.z);
+          const hR = this.getGroundHeight(this.position.x + d, this.position.z);
+          const hD = this.getGroundHeight(this.position.x, this.position.z - d);
+          const hU = this.getGroundHeight(this.position.x, this.position.z + d);
+    
+          const normal = new THREE.Vector3(
+            (hL - hR) / (2 * d),
+            1,
+            (hD - hU) / (2 * d)
+          ).normalize();
+    
+          this.position.y = groundY;
+    
+          const velAlongNormal = this.velocity.dot(normal);
+          if (velAlongNormal < 0) {
+            const normalComponent = normal.clone().multiplyScalar(velAlongNormal);
+            this.velocity.sub(normalComponent);
+            this.velocity.multiplyScalar(this.groundFriction);
+          }
+        }
+    
+        // --- Arena Boundary (invisible edge wall) ---   <-- PASTE HERE
+        const distFromCenter = Math.hypot(this.position.x, this.position.z);
+        if (distFromCenter > this.arenaRadius) {
+          const inwardNormal = new THREE.Vector3(-this.position.x, 0, -this.position.z).normalize();
+          const penetration = distFromCenter - this.arenaRadius;
+          this.position.addScaledVector(inwardNormal, penetration);
+    
+          const velAlongNormal = this.velocity.dot(inwardNormal);
+          if (velAlongNormal < 0) {
+            this.velocity.sub(inwardNormal.clone().multiplyScalar(velAlongNormal));
+            this.velocity.multiplyScalar(this.groundFriction);
+          }
+        }
+            // --- Prop Collision (rocks, spires, buildings, landmarks) ---
+    const droneRadius = 1.0;
+    for (let i = 0; i < this.propColliders.length; i++) {
+      const c = this.propColliders[i];
+      const dx = this.position.x - c.x;
+      const dy = this.position.y - c.y;
+      const dz = this.position.z - c.z;
+      const minDist = c.radius + droneRadius;
+      const distSq = dx * dx + dy * dy + dz * dz;
 
-      const normal = new THREE.Vector3(
-        (hL - hR) / (2 * d),
-        1,
-        (hD - hU) / (2 * d)
-      ).normalize();
+      if (distSq < minDist * minDist && distSq > 0.0001) {
+        const dist = Math.sqrt(distSq);
+        const pushNormal = new THREE.Vector3(dx, dy, dz).divideScalar(dist);
+        const penetration = minDist - dist;
+        this.position.addScaledVector(pushNormal, penetration);
 
-      this.position.y = groundY;
-
-      const velAlongNormal = this.velocity.dot(normal);
-      if (velAlongNormal < 0) {
-        const normalComponent = normal.clone().multiplyScalar(velAlongNormal);
-        this.velocity.sub(normalComponent);
-        this.velocity.multiplyScalar(this.groundFriction);
+        const velAlongNormal = this.velocity.dot(pushNormal);
+        if (velAlongNormal < 0) {
+          this.velocity.sub(pushNormal.clone().multiplyScalar(velAlongNormal));
+          this.velocity.multiplyScalar(this.groundFriction);
+        }
       }
     }
-
-    // Rotations (per-axis rates) — purely visual/aiming now, no longer
-    // tied to how much horizontal thrust you generate.
-    this.rotation.x = THREE.MathUtils.lerp(this.rotation.x, this.currentPitch * 0.5 * this.agility, delta * this.controlRates.pitchRotation);
-    this.rotation.z = THREE.MathUtils.lerp(this.rotation.z, this.currentRoll * 0.5 * this.agility, delta * this.controlRates.rollRotation);
-    this.rotation.y -= this.currentYaw * 1.5 * delta * this.agility;
+        this.rotation.x = THREE.MathUtils.lerp(this.rotation.x, this.currentPitch * 0.5 * this.agility, delta * this.controlRates.pitchRotation);
+        this.rotation.z = THREE.MathUtils.lerp(this.rotation.z, this.currentRoll * 0.5 * this.agility, delta * this.controlRates.rollRotation);
+        this.rotation.y -= this.currentYaw * 1.5 * delta * this.agility;
   }
 }

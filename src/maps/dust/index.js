@@ -35,6 +35,7 @@ function generateTerrain(scene) {
 
 function generateProps(scene, THREE_, getHeightAt) {
   const disposables = [];
+  const colliders = [];
 
   // --- Squashed-sphere dune rocks (same look as legacy generateDuneRocks, now instanced + terrain-aware) ---
   const duneRockGeo = new THREE.SphereGeometry(1, 10, 6);
@@ -53,6 +54,10 @@ function generateProps(scene, THREE_, getHeightAt) {
     minScale: 2.5,
     maxScale: 6,
     exclusionZones: [SPAWN_EXCLUSION],
+  });
+
+  rockTransforms.forEach(t => {
+    colliders.push({ x: t.x, y: t.y, z: t.z, radius: t.scale * 1.0 });
   });
 
   const rocks = createInstancedProps({
@@ -86,16 +91,27 @@ function generateProps(scene, THREE_, getHeightAt) {
   ruinSpots.forEach((spot) => {
     const pillarHeight = 8 + Math.random() * 14;
     const buriedDepth = pillarHeight * (0.4 + Math.random() * 0.3); // sink a chunk into the dune
+    const radiusTop = 1.5 + Math.random();
+    const radiusBottom = 2 + Math.random();
     const pillar = new THREE.Mesh(
-      new THREE.CylinderGeometry(1.5 + Math.random(), 2 + Math.random(), pillarHeight, 8),
+      new THREE.CylinderGeometry(radiusTop, radiusBottom, pillarHeight, 8),
       ruinMat
     );
-    pillar.position.set(spot.x, spot.y + pillarHeight / 2 - buriedDepth, spot.z);
+    const pillarY = spot.y + pillarHeight / 2 - buriedDepth;
+    pillar.position.set(spot.x, pillarY, spot.z);
     pillar.rotation.z = (Math.random() - 0.5) * 0.3; // slight lean, looks ancient/collapsed
     pillar.rotation.y = Math.random() * Math.PI;
     pillar.castShadow = true;
     pillar.receiveShadow = true;
     ruinGroup.add(pillar);
+
+    const exposedHeight = pillarHeight - buriedDepth;
+    colliders.push({
+      x: spot.x,
+      y: pillarY + buriedDepth - exposedHeight / 2 + exposedHeight / 2, // center of exposed portion
+      z: spot.z,
+      radius: Math.max(radiusTop, radiusBottom),
+    });
   });
   scene.add(ruinGroup);
 
@@ -107,7 +123,7 @@ function generateProps(scene, THREE_, getHeightAt) {
     },
   });
 
-  return disposables;
+  return { entries: disposables, colliders };
 }
 
 function generateAtmosphere() {

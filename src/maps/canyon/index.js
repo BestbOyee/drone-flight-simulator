@@ -88,6 +88,8 @@ function createButtes(scene, carver, getHeightAt) {
   ];
 
   const group = new THREE.Group();
+  const colliders = [];
+
   butteSpots.forEach((spot, idx) => {
     const cx = carver.getCenterlineX(spot.z);
     const halfWidth = carver.getHalfWidth(spot.z);
@@ -98,18 +100,29 @@ function createButtes(scene, carver, getHeightAt) {
     const geo = butteVariants[idx % butteVariants.length];
     const butte = new THREE.Mesh(geo, butteMaterial);
     const height = 25 + Math.random() * 20;
-    butte.scale.set(6 + Math.random() * 3, height, 6 + Math.random() * 3);
-    butte.position.set(x, floorY + height * 0.5, z);
+    const radiusX = 6 + Math.random() * 3;
+    const radiusZ = 6 + Math.random() * 3;
+    butte.scale.set(radiusX, height, radiusZ);
+    const centerY = floorY + height * 0.5;
+    butte.position.set(x, centerY, z);
     butte.rotation.y = Math.random() * Math.PI * 2;
     butte.castShadow = true;
     butte.receiveShadow = true;
     group.add(butte);
+
+    colliders.push({
+      x,
+      y: centerY,
+      z,
+      radius: ((radiusX + radiusZ) / 2) * 0.85,
+    });
   });
 
   scene.add(group);
 
   return {
     mesh: group,
+    colliders,
     dispose: () => {
       butteVariants.forEach(g => g.dispose());
       butteMaterial.dispose();
@@ -125,9 +138,6 @@ function generateProps(scene, THREE_, getHeightAt, noise2D) {
 
   const densityNoise = { noise2D, scale: 0.015, threshold: -0.1 };
 
-  // General boulders across the whole arena — thanks to getHeightAt already
-  // including the carved canyon shape, these naturally land correctly on
-  // the mesa, the walls, AND the canyon floor, no special-casing needed.
   const generalRaw = scatterOnTerrain({
     count: 650,
     width: ARENA_SIZE,
@@ -147,6 +157,13 @@ function generateProps(scene, THREE_, getHeightAt, noise2D) {
 
   const allTransforms = [...generalTransforms, ...rimTransforms];
 
+  const rockColliders = allTransforms.map(t => ({
+    x: t.x,
+    y: t.y,
+    z: t.z,
+    radius: t.scale * ROCK_BASE_RADIUS * 0.9,
+  }));
+
   const entries = createInstancedPropVariants({
     geometries: rockVariants,
     material: rockMaterial,
@@ -158,7 +175,10 @@ function generateProps(scene, THREE_, getHeightAt, noise2D) {
 
   const butteEntry = createButtes(scene, carver, getHeightAt);
 
-  return [...entries, butteEntry];
+  return {
+    entries: [...entries, butteEntry],
+    colliders: [...rockColliders, ...butteEntry.colliders],
+  };
 }
 
 function generateAtmosphere() {
